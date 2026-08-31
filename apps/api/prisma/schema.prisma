@@ -154,3 +154,159 @@ model AuditLog {
   @@index([organizationId, createdAt])
   @@map("audit_logs")
 }
+
+// ---------------------------------------------------------------------------
+// Product Master (Phase 03)
+// ---------------------------------------------------------------------------
+
+model ProductCategory {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  parentId       String?  @map("parent_id") @db.Uuid
+  name           String
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  parent   ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children ProductCategory[] @relation("CategoryTree")
+  products Product[]
+
+  @@unique([organizationId, parentId, name])
+  @@index([organizationId, parentId])
+  @@map("product_categories")
+}
+
+model Brand {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  manufacturer   String?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@unique([organizationId, name])
+  @@map("brands")
+}
+
+model UnitOfMeasure {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  code           String
+  name           String
+  // Decimal places allowed for quantities in this unit (0 = whole units only).
+  precision      Int      @default(0)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  conversionsFrom  UnitConversion[] @relation("ConversionFrom")
+  conversionsTo    UnitConversion[] @relation("ConversionTo")
+  productsBase     Product[]        @relation("ProductBaseUom")
+  productsPurchase Product[]        @relation("ProductPurchaseUom")
+  productsSales    Product[]        @relation("ProductSalesUom")
+
+  @@unique([organizationId, code])
+  @@map("units_of_measure")
+}
+
+// 1 <fromUom> = <factor> <toUom>. Always resolve to the product's base unit at full precision.
+model UnitConversion {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  fromUomId      String   @map("from_uom_id") @db.Uuid
+  toUomId        String   @map("to_uom_id") @db.Uuid
+  factor         Decimal  @db.Decimal(18, 6)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  fromUom UnitOfMeasure @relation("ConversionFrom", fields: [fromUomId], references: [id], onDelete: Cascade)
+  toUom   UnitOfMeasure @relation("ConversionTo", fields: [toUomId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, fromUomId, toUomId])
+  @@map("unit_conversions")
+}
+
+model Product {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  sku            String
+  barcode        String?
+  name           String
+  description    String?
+  productType    String?  @map("product_type")
+
+  categoryId String? @map("category_id") @db.Uuid
+  brandId    String? @map("brand_id") @db.Uuid
+
+  baseUomId     String  @map("base_uom_id") @db.Uuid
+  purchaseUomId String? @map("purchase_uom_id") @db.Uuid
+  salesUomId    String? @map("sales_uom_id") @db.Uuid
+
+  // Money — DECIMAL, never float. cost is sensitive (gated by cost.view).
+  cost         Decimal @default(0) @db.Decimal(18, 4)
+  sellingPrice Decimal @default(0) @map("selling_price") @db.Decimal(18, 4)
+  taxCategory  String? @map("tax_category")
+
+  // Preferred supplier is wired to a real FK when Suppliers land (Roadmap step 05).
+  preferredSupplierId String? @map("preferred_supplier_id") @db.Uuid
+
+  // Quantities are decimals (e.g. 1.25 KG).
+  minStock     Decimal @default(0) @map("min_stock") @db.Decimal(18, 4)
+  maxStock     Decimal @default(0) @map("max_stock") @db.Decimal(18, 4)
+  reorderPoint Decimal @default(0) @map("reorder_point") @db.Decimal(18, 4)
+  reorderQty   Decimal @default(0) @map("reorder_qty") @db.Decimal(18, 4)
+  leadTimeDays Int     @default(0) @map("lead_time_days")
+
+  trackInventory Boolean @default(true) @map("track_inventory")
+  allowNegative  Boolean @default(false) @map("allow_negative")
+  isSerialized   Boolean @default(false) @map("is_serialized")
+  isBatchTracked Boolean @default(false) @map("is_batch_tracked")
+  isExpiryTracked Boolean @default(false) @map("is_expiry_tracked")
+  hasVariants    Boolean @default(false) @map("has_variants")
+  isActive       Boolean @default(true) @map("is_active")
+
+  imageUrl String?  @map("image_url")
+  notes    String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  category    ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand       Brand?           @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  baseUom     UnitOfMeasure    @relation("ProductBaseUom", fields: [baseUomId], references: [id])
+  purchaseUom UnitOfMeasure?   @relation("ProductPurchaseUom", fields: [purchaseUomId], references: [id])
+  salesUom    UnitOfMeasure?   @relation("ProductSalesUom", fields: [salesUomId], references: [id])
+  variants    ProductVariant[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId, barcode])
+  @@index([organizationId, categoryId])
+  @@index([organizationId, brandId])
+  @@index([organizationId, isActive])
+  @@map("products")
+}
+
+model ProductVariant {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  productId      String   @map("product_id") @db.Uuid
+  sku            String
+  barcode        String?
+  // e.g. { "size": "M", "color": "Blue" }
+  attributes     Json     @default("{}")
+  cost           Decimal? @db.Decimal(18, 4)
+  sellingPrice   Decimal? @map("selling_price") @db.Decimal(18, 4)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sku])
+  @@index([organizationId, productId])
+  @@map("product_variants")
+}

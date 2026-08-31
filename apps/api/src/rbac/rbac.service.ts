@@ -3,6 +3,7 @@ import {
   PERMISSION_DEFINITIONS,
   SYSTEM_ROLE_DEFINITIONS,
 } from '@iw/contracts';
+import type { PermissionCode, RoleResponse } from '@iw/contracts';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -65,6 +66,23 @@ export class RbacService {
     }
 
     return roleIdByKey;
+  }
+
+  /** Lists an organization's roles with their permission codes (for assignment UIs). */
+  async listRoles(organizationId: string): Promise<RoleResponse[]> {
+    const roles = await this.prisma.role.findMany({
+      where: { organizationId },
+      include: { permissions: { include: { permission: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return roles.map((r) => ({
+      id: r.id,
+      key: r.key,
+      name: r.name,
+      description: r.description,
+      isSystem: r.isSystem,
+      permissions: r.permissions.map((rp) => rp.permission.code as PermissionCode),
+    }));
   }
 }
 

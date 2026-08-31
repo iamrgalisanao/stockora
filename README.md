@@ -8,7 +8,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 
 - **Phase 0 — Architecture:** ✅ [docs/PHASE-0-ARCHITECTURE.md](docs/PHASE-0-ARCHITECTURE.md)
 - **Phase 01 — Foundation / Auth / Organization:** ✅ [docs/PHASE-01-FOUNDATION.md](docs/PHASE-01-FOUNDATION.md)
-- **Next:** user management + warehouse-scoped permissions → Product Master → Inventory Ledger.
+- **Phase 02+03 — Users/Roles & Product Master:** ✅ [docs/PHASE-02-03-USERS-PRODUCTS.md](docs/PHASE-02-03-USERS-PRODUCTS.md)
+- **Next:** Suppliers → Warehouses + Locations → Inventory Ledger → Balance engine.
 
 ## Stack
 
