@@ -8,9 +8,22 @@ import type {
   ReceiptListItem,
   ReceiptResponse,
   RegisterOrganizationRequest,
+  ReleaseDestinationType,
+  ReleaseListItem,
+  ReleaseResponse,
   SupplierResponse,
   WarehouseResponse,
 } from '@iw/contracts';
+
+export interface CreateReleaseBody {
+  warehouseId: string;
+  destinationType: ReleaseDestinationType;
+  purpose?: string;
+  destinationRef?: string;
+  reference?: string;
+  notes?: string;
+  items: Array<{ productId: string; requestedQty: number }>;
+}
 
 export interface CreateReceiptBody {
   supplierId?: string;
@@ -98,5 +111,19 @@ export const api = {
       request<ReceiptResponse>('/receiving', { method: 'POST', body: JSON.stringify(body) }),
     post: (id: string) => request<ReceiptResponse>(`/receiving/${id}/post`, { method: 'POST' }),
     cancel: (id: string) => request<ReceiptResponse>(`/receiving/${id}/cancel`, { method: 'POST' }),
+  },
+
+  releases: {
+    list: () => request<ReleaseListItem[]>('/releases'),
+    get: (id: string) => request<ReleaseResponse>(`/releases/${id}`),
+    create: (body: CreateReleaseBody) =>
+      request<ReleaseResponse>('/releases', { method: 'POST', body: JSON.stringify(body) }),
+    submit: (id: string) => request<ReleaseResponse>(`/releases/${id}/submit`, { method: 'POST' }),
+    approve: (id: string) =>
+      request<ReleaseResponse>(`/releases/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }),
+    reject: (id: string, reason: string) =>
+      request<ReleaseResponse>(`/releases/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    post: (id: string) => request<ReleaseResponse>(`/releases/${id}/post`, { method: 'POST' }),
+    cancel: (id: string) => request<ReleaseResponse>(`/releases/${id}/cancel`, { method: 'POST' }),
   },
 };

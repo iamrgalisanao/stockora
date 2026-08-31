@@ -205,9 +205,29 @@ async function seedDemoCatalog(): Promise<void> {
   console.log('  Tip: post stock via POST /api/inventory/opening-balances.');
 }
 
+/** Ensures existing system roles pick up any newly added permissions (idempotent). */
+async function backfillSystemRolePermissions(permMap: Map<string, string>): Promise<void> {
+  const roles = await prisma.role.findMany({ where: { isSystem: true } });
+  let added = 0;
+  for (const role of roles) {
+    const def = SYSTEM_ROLE_DEFINITIONS.find((d) => d.key === role.key);
+    if (!def) continue;
+    const links = def.permissions
+      .map((c) => permMap.get(c))
+      .filter((id): id is string => Boolean(id))
+      .map((permissionId) => ({ roleId: role.id, permissionId }));
+    if (links.length > 0) {
+      const res = await prisma.rolePermission.createMany({ data: links, skipDuplicates: true });
+      added += res.count;
+    }
+  }
+  if (added > 0) console.log(`Backfilled ${added} role-permission link(s) onto existing system roles.`);
+}
+
 async function main(): Promise<void> {
   const permissionIdByCode = await ensurePermissionCatalog();
   console.log(`Permission catalog ensured (${permissionIdByCode.size} permissions).`);
+  await backfillSystemRolePermissions(permissionIdByCode);
   await seedDemoOrg(permissionIdByCode);
   await seedDemoCatalog();
 }

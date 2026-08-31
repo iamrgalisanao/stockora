@@ -16,6 +16,7 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ReceivingModule } from './receiving/receiving.module';
+import { ReleasesModule } from './releases/releases.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -41,6 +42,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     WarehousesModule,
     InventoryModule,
     ReceivingModule,
+    ReleasesModule,
   ],
   controllers: [HealthController],
   providers: [

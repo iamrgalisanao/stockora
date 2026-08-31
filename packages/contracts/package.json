@@ -2,19 +2,19 @@
   "name": "@iw/contracts",
   "version": "0.1.0",
   "private": true,
-  "type": "commonjs",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "types": "./dist/cjs/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/cjs/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "rimraf dist && tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && node scripts/postbuild.js",
+    "dev": "tsc -p tsconfig.cjs.json --watch",
+    "typecheck": "tsc -p tsconfig.cjs.json --noEmit",
     "clean": "rimraf dist"
   },
   "devDependencies": {

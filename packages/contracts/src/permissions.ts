@@ -12,6 +12,9 @@ export const PERMISSIONS = {
   INVENTORY_COUNT: 'inventory.count',
   INVENTORY_ADJUST: 'inventory.adjust',
   INVENTORY_APPROVE_ADJUSTMENT: 'inventory.approve_adjustment',
+  // Generic document approval (releases, transfers) — distinct from creating them,
+  // so a document's creator cannot also approve it.
+  INVENTORY_APPROVE: 'inventory.approve',
   INVENTORY_RESERVE: 'inventory.reserve',
   OVERRIDE_NEGATIVE: 'override.negative',
 
@@ -53,6 +56,7 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { code: PERMISSIONS.INVENTORY_COUNT, description: 'Perform physical / cycle counts' },
   { code: PERMISSIONS.INVENTORY_ADJUST, description: 'Submit stock adjustments' },
   { code: PERMISSIONS.INVENTORY_APPROVE_ADJUSTMENT, description: 'Approve stock adjustments' },
+  { code: PERMISSIONS.INVENTORY_APPROVE, description: 'Approve releases and transfers' },
   { code: PERMISSIONS.INVENTORY_RESERVE, description: 'Reserve stock against demand' },
   { code: PERMISSIONS.OVERRIDE_NEGATIVE, description: 'Authorize negative-inventory overrides' },
   { code: PERMISSIONS.COST_VIEW, description: 'View item cost' },

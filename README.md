@@ -11,7 +11,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **Phase 02+03 — Users/Roles & Product Master:** ✅ [docs/PHASE-02-03-USERS-PRODUCTS.md](docs/PHASE-02-03-USERS-PRODUCTS.md)
 - **Phase 05–08 — Inventory Core (Suppliers · Warehouses · Ledger · Balance engine):** ✅ [docs/PHASE-05-08-INVENTORY-CORE.md](docs/PHASE-05-08-INVENTORY-CORE.md)
 - **Phase 10 — Receiving (backend + web UI):** ✅ [docs/PHASE-10-RECEIVING.md](docs/PHASE-10-RECEIVING.md)
-- **Next:** Releases (Draft→Approve→Post) and Transfers (approval + in-transit), each as a UI slice.
+- **Phase 11 — Releases (approval workflow, backend + web UI):** ✅ [docs/PHASE-11-RELEASES.md](docs/PHASE-11-RELEASES.md)
+- **Next:** Transfers (approval + in-transit lifecycle), then Adjustments and Physical Count.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).
