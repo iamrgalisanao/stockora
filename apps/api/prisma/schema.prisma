@@ -56,7 +56,8 @@ model User {
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
-  memberships Membership[]
+  memberships       Membership[]
+  managedWarehouses Warehouse[]  @relation("WarehouseManager")
 
   @@map("users")
 }
@@ -156,6 +157,123 @@ model AuditLog {
 }
 
 // ---------------------------------------------------------------------------
+// Inventory Ledger + Balance projection (Phase 07-08)
+// ---------------------------------------------------------------------------
+
+enum MovementType {
+  OPENING_BALANCE
+  PURCHASE_RECEIPT
+  SALES_RELEASE
+  TRANSFER_OUT
+  TRANSFER_IN
+  CUSTOMER_RETURN
+  SUPPLIER_RETURN
+  STOCK_ADJUSTMENT_IN
+  STOCK_ADJUSTMENT_OUT
+  DAMAGE
+  EXPIRY
+  PRODUCTION_CONSUMPTION
+  PRODUCTION_OUTPUT
+  PROJECT_ISSUE
+  INTERNAL_CONSUMPTION
+}
+
+// Append-only ledger. Each row records the explicit signed delta to every stock
+// bucket at a (product, variant, warehouse[, location]). The deltas ARE the source
+// of truth; the balance projection is their running sum. Never UPDATE/DELETE after post.
+model InventoryMovement {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  txnNumber      String       @map("txn_number")
+  movementType   MovementType @map("movement_type")
+
+  productId String  @map("product_id") @db.Uuid
+  variantId String? @map("variant_id") @db.Uuid
+
+  warehouseId String  @map("warehouse_id") @db.Uuid
+  locationId  String? @map("location_id") @db.Uuid
+
+  // Primary quantity moved (positive), for stock-card IN/OUT display.
+  quantity Decimal @db.Decimal(18, 4)
+  uomId    String  @map("uom_id") @db.Uuid
+
+  // Explicit signed bucket deltas — the authoritative effect of this movement.
+  onHandDelta     Decimal @default(0) @map("on_hand_delta") @db.Decimal(18, 4)
+  reservedDelta   Decimal @default(0) @map("reserved_delta") @db.Decimal(18, 4)
+  inTransitDelta  Decimal @default(0) @map("in_transit_delta") @db.Decimal(18, 4)
+  quarantinedDelta Decimal @default(0) @map("quarantined_delta") @db.Decimal(18, 4)
+  damagedDelta    Decimal @default(0) @map("damaged_delta") @db.Decimal(18, 4)
+
+  unitCost  Decimal @default(0) @map("unit_cost") @db.Decimal(18, 4)
+  totalCost Decimal @default(0) @map("total_cost") @db.Decimal(18, 4)
+
+  batchId  String? @map("batch_id") @db.Uuid
+  serialId String? @map("serial_id") @db.Uuid
+
+  referenceType String? @map("reference_type")
+  referenceId   String? @map("reference_id")
+  idempotencyKey String? @map("idempotency_key")
+
+  reversalOfId String? @map("reversal_of_id") @db.Uuid
+
+  performedById String?  @map("performed_by_id") @db.Uuid
+  approvedById  String?  @map("approved_by_id") @db.Uuid
+  reason        String?
+  postedAt      DateTime @default(now()) @map("posted_at")
+
+  product   Product            @relation(fields: [productId], references: [id])
+  variant   ProductVariant?    @relation(fields: [variantId], references: [id])
+  warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
+  reversalOf InventoryMovement? @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy InventoryMovement[] @relation("Reversal")
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, productId, postedAt])
+  @@index([organizationId, warehouseId, postedAt])
+  @@index([organizationId, referenceType, referenceId])
+  @@map("inventory_movements")
+}
+
+// Materialized projection of the ledger. variantId uses the NIL uuid
+// (00000000-0000-0000-0000-000000000000) to mean "no variant" so the unique key
+// has no NULLs. Updated in the same transaction that appends the movement(s).
+model InventoryBalance {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  productId      String @map("product_id") @db.Uuid
+  variantId      String @map("variant_id") @db.Uuid
+  warehouseId    String @map("warehouse_id") @db.Uuid
+
+  onHand      Decimal @default(0) @map("on_hand") @db.Decimal(18, 4)
+  reserved    Decimal @default(0) @db.Decimal(18, 4)
+  inTransit   Decimal @default(0) @map("in_transit") @db.Decimal(18, 4)
+  quarantined Decimal @default(0) @db.Decimal(18, 4)
+  damaged     Decimal @default(0) @db.Decimal(18, 4)
+
+  avgCost Decimal @default(0) @map("avg_cost") @db.Decimal(18, 4)
+  version Int     @default(0)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  product   Product   @relation(fields: [productId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@unique([organizationId, productId, variantId, warehouseId])
+  @@index([organizationId, warehouseId])
+  @@index([organizationId, productId])
+  @@map("inventory_balances")
+}
+
+model NumberSequence {
+  organizationId String @map("organization_id") @db.Uuid
+  key            String
+  value          BigInt @default(0)
+
+  @@id([organizationId, key])
+  @@map("number_sequences")
+}
+
+// ---------------------------------------------------------------------------
 // Product Master (Phase 03)
 // ---------------------------------------------------------------------------
 
@@ -251,7 +369,6 @@ model Product {
   sellingPrice Decimal @default(0) @map("selling_price") @db.Decimal(18, 4)
   taxCategory  String? @map("tax_category")
 
-  // Preferred supplier is wired to a real FK when Suppliers land (Roadmap step 05).
   preferredSupplierId String? @map("preferred_supplier_id") @db.Uuid
 
   // Quantities are decimals (e.g. 1.25 KG).
@@ -275,12 +392,16 @@ model Product {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  category    ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  brand       Brand?           @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  baseUom     UnitOfMeasure    @relation("ProductBaseUom", fields: [baseUomId], references: [id])
-  purchaseUom UnitOfMeasure?   @relation("ProductPurchaseUom", fields: [purchaseUomId], references: [id])
-  salesUom    UnitOfMeasure?   @relation("ProductSalesUom", fields: [salesUomId], references: [id])
-  variants    ProductVariant[]
+  category          ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand             Brand?            @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  baseUom           UnitOfMeasure     @relation("ProductBaseUom", fields: [baseUomId], references: [id])
+  purchaseUom       UnitOfMeasure?    @relation("ProductPurchaseUom", fields: [purchaseUomId], references: [id])
+  salesUom          UnitOfMeasure?    @relation("ProductSalesUom", fields: [salesUomId], references: [id])
+  preferredSupplier Supplier?         @relation("PreferredSupplier", fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+  variants          ProductVariant[]
+  supplierProducts  SupplierProduct[]
+  movements         InventoryMovement[]
+  balances          InventoryBalance[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, barcode])
@@ -288,6 +409,132 @@ model Product {
   @@index([organizationId, brandId])
   @@index([organizationId, isActive])
   @@map("products")
+}
+
+// ---------------------------------------------------------------------------
+// Warehouses + Locations (Phase 06)
+// ---------------------------------------------------------------------------
+
+enum WarehouseType {
+  MAIN
+  BRANCH
+  RETAIL_STORE
+  STOCKROOM
+  PRODUCTION
+  TRANSIT
+  RETURNS
+  VIRTUAL
+}
+
+enum WarehouseStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Warehouse {
+  id              String          @id @default(uuid()) @db.Uuid
+  organizationId  String          @map("organization_id") @db.Uuid
+  code            String
+  name            String
+  type            WarehouseType   @default(MAIN)
+  address         String?
+  managerId       String?         @map("manager_id") @db.Uuid
+  phone           String?
+  email           String?
+  status          WarehouseStatus @default(ACTIVE)
+  isDefault       Boolean         @default(false) @map("is_default")
+  allowReceiving  Boolean         @default(true) @map("allow_receiving")
+  allowDispatch   Boolean         @default(true) @map("allow_dispatch")
+  notes           String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  manager   User?               @relation("WarehouseManager", fields: [managerId], references: [id], onDelete: SetNull)
+  locations WarehouseLocation[]
+  movements InventoryMovement[]
+  balances  InventoryBalance[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+  @@map("warehouses")
+}
+
+model WarehouseLocation {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  warehouseId     String   @map("warehouse_id") @db.Uuid
+  parentId        String?  @map("parent_id") @db.Uuid
+  code            String
+  name            String?
+  // Free-form level: ZONE / AISLE / RACK / SHELF / BIN / AREA (not enforced as enum).
+  type            String?
+  isPickable      Boolean  @default(true) @map("is_pickable")
+  isReceivingArea Boolean  @default(false) @map("is_receiving_area")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  warehouse Warehouse           @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  parent    WarehouseLocation?  @relation("LocationTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  WarehouseLocation[] @relation("LocationTree")
+
+  @@unique([organizationId, warehouseId, code])
+  @@index([warehouseId, parentId])
+  @@map("warehouse_locations")
+}
+
+// ---------------------------------------------------------------------------
+// Suppliers (Phase 05)
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  code           String
+  companyName    String   @map("company_name")
+  contactPerson  String?  @map("contact_person")
+  email          String?
+  phone          String?
+  address        String?
+  taxNumber      String?  @map("tax_number")
+  paymentTerms   String?  @map("payment_terms")
+  leadTimeDays   Int      @default(0) @map("lead_time_days")
+  rating         Int?
+  isPreferred    Boolean  @default(false) @map("is_preferred")
+  isActive       Boolean  @default(true) @map("is_active")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  supplierProducts     SupplierProduct[]
+  preferredForProducts Product[]         @relation("PreferredSupplier")
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@map("suppliers")
+}
+
+// A supplier's offer for a product: their SKU, price, lead time (Phase 05).
+model SupplierProduct {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  supplierId     String   @map("supplier_id") @db.Uuid
+  productId      String   @map("product_id") @db.Uuid
+  supplierSku    String?  @map("supplier_sku")
+  cost           Decimal  @default(0) @db.Decimal(18, 4)
+  leadTimeDays   Int?     @map("lead_time_days")
+  minOrderQty    Decimal? @map("min_order_qty") @db.Decimal(18, 4)
+  isPreferred    Boolean  @default(false) @map("is_preferred")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, supplierId, productId])
+  @@index([organizationId, productId])
+  @@map("supplier_products")
 }
 
 model ProductVariant {
@@ -304,7 +551,8 @@ model ProductVariant {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  movements InventoryMovement[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, productId])

@@ -12,6 +12,9 @@ import { UnitsModule } from './catalog/units/units.module';
 import { BrandsModule } from './catalog/brands/brands.module';
 import { CategoriesModule } from './catalog/categories/categories.module';
 import { ProductsModule } from './catalog/products/products.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
+import { WarehousesModule } from './warehouses/warehouses.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -33,6 +36,9 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     BrandsModule,
     CategoriesModule,
     ProductsModule,
+    SuppliersModule,
+    WarehousesModule,
+    InventoryModule,
   ],
   controllers: [HealthController],
   providers: [

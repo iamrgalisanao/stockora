@@ -3,3 +3,6 @@ export * from './roles';
 export * from './dto';
 export * from './users';
 export * from './catalog';
+export * from './suppliers';
+export * from './warehouses';
+export * from './inventory';

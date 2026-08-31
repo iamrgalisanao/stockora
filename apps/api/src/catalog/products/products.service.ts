@@ -230,12 +230,20 @@ export class ProductsService {
     if (dto.salesUomId) checks.push(this.ensureUom(organizationId, dto.salesUomId));
     if (dto.categoryId) checks.push(this.ensureRef(organizationId, 'productCategory', dto.categoryId, 'Category'));
     if (dto.brandId) checks.push(this.ensureRef(organizationId, 'brand', dto.brandId, 'Brand'));
+    if (dto.preferredSupplierId) {
+      checks.push(this.ensureSupplier(organizationId, dto.preferredSupplierId));
+    }
     await Promise.all(checks);
   }
 
   private async ensureUom(organizationId: string, id: string): Promise<void> {
     const u = await this.prisma.unitOfMeasure.findFirst({ where: { id, organizationId } });
     if (!u) throw new BadRequestException(`Unit of measure ${id} not found`);
+  }
+
+  private async ensureSupplier(organizationId: string, id: string): Promise<void> {
+    const s = await this.prisma.supplier.findFirst({ where: { id, organizationId } });
+    if (!s) throw new BadRequestException(`Supplier ${id} not found`);
   }
 
   private async ensureRef(

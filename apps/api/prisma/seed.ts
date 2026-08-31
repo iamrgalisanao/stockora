@@ -155,7 +155,54 @@ async function seedDemoCatalog(): Promise<void> {
     });
     console.log('  product:  SSD-SAM-1TB-001 (Samsung 1TB SSD)');
   }
-  console.log('Demo catalog ensured (units, conversions, category, brand, product).');
+
+  // Supplier + link
+  const product = await prisma.product.findUnique({
+    where: { organizationId_sku: { organizationId: org.id, sku: 'SSD-SAM-1TB-001' } },
+  });
+  const supplier =
+    (await prisma.supplier.findUnique({
+      where: { organizationId_code: { organizationId: org.id, code: 'SUP-ACME' } },
+    })) ??
+    (await prisma.supplier.create({
+      data: { organizationId: org.id, code: 'SUP-ACME', companyName: 'ACME Distribution', leadTimeDays: 7 },
+    }));
+  if (product) {
+    const link = await prisma.supplierProduct.findUnique({
+      where: {
+        organizationId_supplierId_productId: {
+          organizationId: org.id,
+          supplierId: supplier.id,
+          productId: product.id,
+        },
+      },
+    });
+    if (!link) {
+      await prisma.supplierProduct.create({
+        data: {
+          organizationId: org.id,
+          supplierId: supplier.id,
+          productId: product.id,
+          cost: 2950,
+          leadTimeDays: 7,
+          isPreferred: true,
+        },
+      });
+    }
+  }
+
+  // Default warehouse
+  const existingWh = await prisma.warehouse.findUnique({
+    where: { organizationId_code: { organizationId: org.id, code: 'MAIN' } },
+  });
+  if (!existingWh) {
+    await prisma.warehouse.create({
+      data: { organizationId: org.id, code: 'MAIN', name: 'Main Warehouse', type: 'MAIN', isDefault: true },
+    });
+  }
+
+  console.log('Demo data ensured (units, conversions, category, brand, product, supplier, warehouse).');
+  console.log('  Tip: post stock via POST /api/inventory/opening-balances.');
 }
 
 async function main(): Promise<void> {

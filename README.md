@@ -9,7 +9,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **Phase 0 — Architecture:** ✅ [docs/PHASE-0-ARCHITECTURE.md](docs/PHASE-0-ARCHITECTURE.md)
 - **Phase 01 — Foundation / Auth / Organization:** ✅ [docs/PHASE-01-FOUNDATION.md](docs/PHASE-01-FOUNDATION.md)
 - **Phase 02+03 — Users/Roles & Product Master:** ✅ [docs/PHASE-02-03-USERS-PRODUCTS.md](docs/PHASE-02-03-USERS-PRODUCTS.md)
-- **Next:** Suppliers → Warehouses + Locations → Inventory Ledger → Balance engine.
+- **Phase 05–08 — Inventory Core (Suppliers · Warehouses · Ledger · Balance engine):** ✅ [docs/PHASE-05-08-INVENTORY-CORE.md](docs/PHASE-05-08-INVENTORY-CORE.md)
+- **Next:** operational documents — Receiving → Releases → Transfers → Adjustments → Physical Count.
 
 ## Stack
 
