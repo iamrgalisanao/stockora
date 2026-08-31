@@ -1,0 +1,54 @@
+# Inventory + Warehouse Management System
+
+An **Inventory Control Engine** for SMEs — a single source of truth for stock built on an
+append-only movement ledger. Every quantity change carries a reason, a reference, an actor, and a
+timestamp; balances are *derived* from the ledger, never edited in place.
+
+## Status
+
+- **Phase 0 — Architecture:** ✅ [docs/PHASE-0-ARCHITECTURE.md](docs/PHASE-0-ARCHITECTURE.md)
+- **Phase 01 — Foundation / Auth / Organization:** ✅ [docs/PHASE-01-FOUNDATION.md](docs/PHASE-01-FOUNDATION.md)
+- **Next:** user management + warehouse-scoped permissions → Product Master → Inventory Ledger.
+
+## Stack
+
+TypeScript monorepo (npm workspaces + Turborepo) · NestJS API · PostgreSQL 16 + Prisma · Next.js 14 web.
+
+## Quickstart
+
+```bash
+npm install
+npm run db:up                       # Postgres 16 in Docker (host port 5544)
+npm run prisma:generate -w @iw/api
+npm run api:migrate                 # apply the foundation migration
+npm run api:seed                    # demo org -> admin@demo.test / password123
+npm run dev                         # API http://localhost:4100/api · Web http://localhost:3000
+```
+
+Tests: `npm run test -w @iw/api` (unit) and `npm run test:e2e -w @iw/api` (e2e vs live Postgres).
+
+## Architecture
+
+The full product & architecture specification lives in:
+
+📄 **[docs/PHASE-0-ARCHITECTURE.md](docs/PHASE-0-ARCHITECTURE.md)**
+
+It covers: recommended stack · user roles · domain architecture · entity model · Mermaid ERD ·
+inventory ledger design · stock-balance projection · state machines · screens · API (CRUD vs
+command) · permission matrix · WAC costing · barcode/AI/integration architecture · domain events ·
+reports · dashboard formulas · MVP vs future scope · roadmap · testing strategy · and the
+invariant proof (how stock moves supplier→receiving→reservation→release and
+warehouse→transfer→transit→destination **without ever mutating a quantity directly**).
+
+## Core principle
+
+```
+Stock Movement Ledger (append-only)  →  Calculated Inventory Balance (projection)
+```
+
+Never `product.stock_quantity = newQuantity`. Always post a movement.
+
+## Next step
+
+Begin Roadmap step 01 (Foundation / Auth / Organization), then build the **ledger (07)** and
+**balance engine (08)** before any operational document. See §20 of the spec.

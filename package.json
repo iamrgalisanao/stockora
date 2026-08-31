@@ -1,0 +1,30 @@
+{
+  "name": "inventory-warehouse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Inventory + Warehouse Management System — an Inventory Control Engine for SMEs",
+  "packageManager": "npm@11.13.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "api:migrate": "npm run prisma:migrate -w @iw/api",
+    "api:seed": "npm run seed -w @iw/api"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}
