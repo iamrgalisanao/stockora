@@ -157,6 +157,67 @@ model AuditLog {
 }
 
 // ---------------------------------------------------------------------------
+// Goods Receiving (Phase 10)
+// ---------------------------------------------------------------------------
+
+enum ReceiptStatus {
+  DRAFT
+  RECEIVING
+  FOR_INSPECTION
+  PARTIALLY_RECEIVED
+  COMPLETED
+  CANCELLED
+}
+
+model GoodsReceipt {
+  id                String        @id @default(uuid()) @db.Uuid
+  organizationId    String        @map("organization_id") @db.Uuid
+  receiptNumber     String        @map("receipt_number")
+  supplierId        String?       @map("supplier_id") @db.Uuid
+  warehouseId       String        @map("warehouse_id") @db.Uuid
+  purchaseOrderRef  String?       @map("purchase_order_ref")
+  deliveryReceiptRef String?      @map("delivery_receipt_ref")
+  supplierInvoiceRef String?      @map("supplier_invoice_ref")
+  receivingDate     DateTime      @default(now()) @map("receiving_date")
+  receivedById      String?       @map("received_by_id") @db.Uuid
+  status            ReceiptStatus @default(DRAFT)
+  notes             String?
+  postedAt          DateTime?     @map("posted_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  supplier  Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
+  items     GoodsReceiptItem[]
+
+  @@unique([organizationId, receiptNumber])
+  @@index([organizationId, status])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  receiptId    String   @map("receipt_id") @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  variantId    String?  @map("variant_id") @db.Uuid
+  expectedQty  Decimal  @default(0) @map("expected_qty") @db.Decimal(18, 4)
+  receivedQty  Decimal  @default(0) @map("received_qty") @db.Decimal(18, 4)
+  rejectedQty  Decimal  @default(0) @map("rejected_qty") @db.Decimal(18, 4)
+  unitCost     Decimal  @default(0) @map("unit_cost") @db.Decimal(18, 4)
+  batchNumber  String?  @map("batch_number")
+  expiryDate   DateTime? @map("expiry_date")
+  locationId   String?  @map("location_id") @db.Uuid
+  remarks      String?
+
+  receipt GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id])
+
+  @@index([receiptId])
+  @@map("goods_receipt_items")
+}
+
+// ---------------------------------------------------------------------------
 // Inventory Ledger + Balance projection (Phase 07-08)
 // ---------------------------------------------------------------------------
 
@@ -402,6 +463,7 @@ model Product {
   supplierProducts  SupplierProduct[]
   movements         InventoryMovement[]
   balances          InventoryBalance[]
+  receiptItems      GoodsReceiptItem[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, barcode])
@@ -453,6 +515,7 @@ model Warehouse {
   locations WarehouseLocation[]
   movements InventoryMovement[]
   balances  InventoryBalance[]
+  goodsReceipts GoodsReceipt[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -508,6 +571,7 @@ model Supplier {
 
   supplierProducts     SupplierProduct[]
   preferredForProducts Product[]         @relation("PreferredSupplier")
+  goodsReceipts        GoodsReceipt[]
 
   @@unique([organizationId, code])
   @@index([organizationId, isActive])

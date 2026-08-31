@@ -1,10 +1,24 @@
 import type {
   AuthenticatedUser,
   AuthTokenResponse,
+  BalanceResponse,
   LoginRequest,
   OrganizationResponse,
+  ProductResponse,
+  ReceiptListItem,
+  ReceiptResponse,
   RegisterOrganizationRequest,
+  SupplierResponse,
+  WarehouseResponse,
 } from '@iw/contracts';
+
+export interface CreateReceiptBody {
+  supplierId?: string;
+  warehouseId: string;
+  purchaseOrderRef?: string;
+  notes?: string;
+  items: Array<{ productId: string; expectedQty?: number; receivedQty?: number; unitCost?: number }>;
+}
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4100';
 const TOKEN_KEY = 'iw_token';
@@ -65,4 +79,24 @@ export const api = {
     request<AuthTokenResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   me: () => request<AuthenticatedUser>('/auth/me'),
   currentOrganization: () => request<OrganizationResponse>('/organizations/current'),
+
+  products: () => request<ProductResponse[]>('/products'),
+  warehouses: () => request<WarehouseResponse[]>('/warehouses'),
+  suppliers: () => request<SupplierResponse[]>('/suppliers'),
+  balances: (params?: { warehouseId?: string; productId?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.warehouseId) q.set('warehouseId', params.warehouseId);
+    if (params?.productId) q.set('productId', params.productId);
+    const qs = q.toString();
+    return request<BalanceResponse[]>(`/inventory/balances${qs ? `?${qs}` : ''}`);
+  },
+
+  receiving: {
+    list: () => request<ReceiptListItem[]>('/receiving'),
+    get: (id: string) => request<ReceiptResponse>(`/receiving/${id}`),
+    create: (body: CreateReceiptBody) =>
+      request<ReceiptResponse>('/receiving', { method: 'POST', body: JSON.stringify(body) }),
+    post: (id: string) => request<ReceiptResponse>(`/receiving/${id}/post`, { method: 'POST' }),
+    cancel: (id: string) => request<ReceiptResponse>(`/receiving/${id}/cancel`, { method: 'POST' }),
+  },
 };
