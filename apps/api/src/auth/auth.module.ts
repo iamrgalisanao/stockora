@@ -6,6 +6,7 @@ import { RbacModule } from '../rbac/rbac.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { SessionService } from './session.service';
 
 @Module({
   imports: [
@@ -16,12 +17,12 @@ import { JwtStrategy } from './jwt.strategy';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '1d') },
+        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '15m') },
       }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  providers: [AuthService, JwtStrategy, SessionService],
+  exports: [AuthService, SessionService],
 })
 export class AuthModule {}

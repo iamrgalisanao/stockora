@@ -30,7 +30,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **2A.2B — Barcode Scanner UX (wedge/manual/camera → BarcodeResolver, identity panel, diagnostic mode):** ✅ [docs/PHASE-2A2B-SCANNER-UX.md](docs/PHASE-2A2B-SCANNER-UX.md)
 - **2A.3A — Bulk Import (staged preview→commit for products, suppliers, opening inventory; ledger-posted, IMPORT-audited):** ✅ [docs/PHASE-2A3A-IMPORT.md](docs/PHASE-2A3A-IMPORT.md)
 - **2A.3B — Export (read-only CSV for products, suppliers, stock balances; round-trips as import templates, CSV-injection safe):** ✅ [docs/PHASE-2A3B-EXPORT.md](docs/PHASE-2A3B-EXPORT.md)
-- **Next:** 2A.4 Hardening.
+- **2A.4 — Hardening (release-readiness gate), in progress:**
+  - **2A.4A — Sessions & refresh tokens (rotation, reuse detection, revoke/revoke-all, silent web refresh):** ✅ [docs/PHASE-2A4A-SESSIONS.md](docs/PHASE-2A4A-SESSIONS.md)
+  - **Next:** 2A.4B API hardening (rate limiting, payload limits, security headers, error shape, health/readiness).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

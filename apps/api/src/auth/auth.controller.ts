@@ -14,6 +14,9 @@ import type { RequestUser } from '../common/request-user';
 import { AuthService } from './auth.service';
 import { RegisterOrganizationDto } from './dto/register-organization.dto';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+
+const ua = (req: Request) => (req.headers['user-agent'] as string | undefined) ?? undefined;
 
 @Controller('auth')
 export class AuthController {
@@ -25,14 +28,33 @@ export class AuthController {
     @Body() dto: RegisterOrganizationDto,
     @Req() req: Request,
   ): Promise<AuthTokenResponse> {
-    return this.authService.register(dto, req.ip);
+    return this.authService.register(dto, req.ip, ua(req));
   }
 
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
   login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthTokenResponse> {
-    return this.authService.login(dto, req.ip);
+    return this.authService.login(dto, req.ip, ua(req));
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('refresh')
+  refresh(@Body() dto: RefreshTokenDto, @Req() req: Request): Promise<AuthTokenResponse> {
+    return this.authService.refresh(dto.refreshToken, { ip: req.ip, userAgent: ua(req) });
+  }
+
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('logout')
+  async logout(@CurrentUser() user: RequestUser): Promise<void> {
+    await this.authService.logout(user.sessionId);
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('logout-all')
+  logoutAll(@CurrentUser() user: RequestUser): Promise<{ revoked: number }> {
+    return this.authService.logoutAll(user.userId);
   }
 
   @Get('me')

@@ -58,8 +58,35 @@ model User {
 
   memberships       Membership[]
   managedWarehouses Warehouse[]  @relation("WarehouseManager")
+  sessions          Session[]
 
   @@map("users")
+}
+
+/// A refresh-token session. Access tokens are short-lived and carry `sid`; the refresh token is
+/// opaque, stored only as a hash, and ROTATED on every use. Reuse of an already-rotated token
+/// revokes the whole `familyId` lineage (2A.4A).
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  membershipId     String    @map("membership_id") @db.Uuid
+  familyId         String    @map("family_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ipAddress        String?   @map("ip_address")
+  expiresAt        DateTime  @map("expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  revokedAt        DateTime? @map("revoked_at")
+  revokedReason    String?   @map("revoked_reason")
+  replacedById     String?   @map("replaced_by_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@map("sessions")
 }
 
 enum MembershipStatus {

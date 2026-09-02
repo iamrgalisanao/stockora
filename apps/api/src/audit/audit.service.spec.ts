@@ -19,7 +19,7 @@ describe('AuditService (unit)', () => {
   }
 
   const user = (scope: string[] | null): RequestUser => ({
-    userId: 'u1', email: 'u@x', name: 'Admin', membershipId: 'm1', organizationId: 'org1',
+    userId: 'u1', email: 'u@x', name: 'Admin', sessionId: 's1', membershipId: 'm1', organizationId: 'org1',
     roleKey: 'admin', roleName: 'Admin', permissions: [], warehouseScope: scope,
   });
 

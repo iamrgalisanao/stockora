@@ -1,6 +1,7 @@
 {
   "rootDir": "..",
   "testEnvironment": "node",
+  "maxWorkers": 2,
   "testRegex": "test/.*\\.e2e-spec\\.ts$",
   "moduleFileExtensions": ["js", "json", "ts"],
   "transform": {
