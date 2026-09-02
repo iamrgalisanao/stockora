@@ -186,6 +186,69 @@ export class ReservationsService {
     return this.toResponse(updated);
   }
 
+  // ---- consumption (called by the release-posting flow, 2B.1B) ----
+
+  /**
+   * Validate that `qty` can be consumed from a reservation line for a release in `warehouseId` /
+   * `productId` / `variantId`. Returns the remaining reserved. Read-only.
+   */
+  async validateConsumable(
+    organizationId: string,
+    reservationLineId: string,
+    warehouseId: string,
+    productId: string,
+    variantId: string,
+    qty: Prisma.Decimal,
+  ): Promise<void> {
+    const line = await this.prisma.reservationLine.findFirst({
+      where: { id: reservationLineId, reservation: { organizationId } },
+      include: { reservation: { select: { warehouseId: true, status: true } } },
+    });
+    if (!line) throw new BadRequestException('Reservation line not found');
+    const st = line.reservation.status;
+    if (st !== 'RESERVED' && st !== 'PARTIALLY_CONSUMED') {
+      throw new BadRequestException(`Reservation is ${st} and cannot be consumed`);
+    }
+    if (line.reservation.warehouseId !== warehouseId) throw new BadRequestException('Reservation is for a different warehouse');
+    if (line.productId !== productId || line.variantId !== variantId) {
+      throw new BadRequestException('Release line does not match the reserved product/variant');
+    }
+    const remaining = D(line.quantity).sub(line.consumedQuantity);
+    if (qty.gt(remaining)) {
+      throw new BadRequestException(`Consumption ${qty.toString()} exceeds remaining reserved ${remaining.toString()}`);
+    }
+  }
+
+  /**
+   * Within the caller's transaction: record `qty` consumed against a reservation line and roll the
+   * parent reservation's status (PARTIALLY_CONSUMED / CONSUMED). The reserved-bucket decrement itself
+   * rides the release movement (reservedDelta) — this only advances reservation metadata.
+   * Returns the reservationId + its new status for the caller to audit.
+   */
+  async recordConsumption(
+    tx: Tx,
+    reservationLineId: string,
+    qty: Prisma.Decimal,
+  ): Promise<{ reservationId: string; reservationNo: string; status: ReservationStatus }> {
+    const line = await tx.reservationLine.update({
+      where: { id: reservationLineId },
+      data: { consumedQuantity: { increment: qty } },
+      select: { reservationId: true },
+    });
+    const all = await tx.reservationLine.findMany({
+      where: { reservationId: line.reservationId },
+      select: { quantity: true, consumedQuantity: true },
+    });
+    const fullyConsumed = all.every((l) => D(l.consumedQuantity).gte(l.quantity));
+    const status: ReservationStatus = fullyConsumed ? 'CONSUMED' : 'PARTIALLY_CONSUMED';
+    const res = await tx.inventoryReservation.update({
+      where: { id: line.reservationId },
+      data: { status, ...(fullyConsumed ? { completedAt: new Date() } : {}) },
+      select: { id: true, reservationNo: true, status: true },
+    });
+    return { reservationId: res.id, reservationNo: res.reservationNo, status: res.status };
+  }
+
   // ---- helpers ----
 
   private readonly TRANSITIONS: Record<ReservationStatus, ReservationStatus[]> = {

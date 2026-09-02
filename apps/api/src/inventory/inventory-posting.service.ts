@@ -20,6 +20,8 @@ export interface StockLine {
   quantity: Prisma.Decimal.Value;
   unitCost?: Prisma.Decimal.Value | null;
   locationId?: string | null;
+  /** Override the default bucket deltas — e.g. consuming a reservation drops on_hand AND reserved. */
+  deltas?: BucketDeltas;
 }
 
 export interface PostContext {
@@ -254,6 +256,7 @@ export class InventoryPostingService {
       locationId: line.locationId ?? null,
       quantity: D(line.quantity),
       unitCost: line.unitCost != null ? D(line.unitCost) : null,
+      deltas: line.deltas,
       referenceType,
       referenceId: ref,
       // Only the first movement carries the idempotency key (unique per org).

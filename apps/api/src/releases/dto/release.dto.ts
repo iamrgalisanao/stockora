@@ -21,6 +21,8 @@ export class ReleaseItemInputDto {
   @IsOptional() @IsUUID() variantId?: string;
   @IsNumber(qty) @IsPositive() requestedQty!: number;
   @IsOptional() @IsUUID() locationId?: string;
+  /** When set, posting this line consumes the referenced reservation line (2B.1B). */
+  @IsOptional() @IsUUID() reservationLineId?: string;
   @IsOptional() @IsString() @MaxLength(500) remarks?: string;
 }
 

@@ -32,6 +32,7 @@ export interface ReleaseItemResponse {
   approvedQty: string;
   releasedQty: string;
   locationId: string | null;
+  reservationLineId: string | null;
   remarks: string | null;
 }
 

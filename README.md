@@ -37,7 +37,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ Phase 2A — Operational Readiness complete.**
 - **2B.1 — Reservations** (commitments against availability; [ADR 0005](docs/adr/0005-reservations.md)):
   - **2B.1A — Reservation Core (create/confirm/release/cancel, availability enforcement, concurrency, audit):** ✅ [docs/PHASE-2B1A-RESERVATION-CORE.md](docs/PHASE-2B1A-RESERVATION-CORE.md)
-  - **Next:** 2B.1B Consumption, 2B.1C Expiry + UX.
+  - **2B.1B — Consumption (releases consume reservations at line level; atomic on_hand + reserved via the ledger; partial/full; idempotent):** ✅ [docs/PHASE-2B1B-CONSUMPTION.md](docs/PHASE-2B1B-CONSUMPTION.md)
+  - **Next:** 2B.1C Expiry + UX.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).
