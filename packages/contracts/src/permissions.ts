@@ -36,6 +36,13 @@ export const PERMISSIONS = {
 
   // Audit
   AUDIT_VIEW: 'audit.view',
+
+  // Bulk import / export (2A.3)
+  IMPORT_PRODUCTS: 'import.products',
+  IMPORT_SUPPLIERS: 'import.suppliers',
+  IMPORT_OPENING_INVENTORY: 'import.opening_inventory',
+  EXPORT_CATALOG: 'export.catalog',
+  EXPORT_INVENTORY: 'export.inventory',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -70,4 +77,9 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { code: PERMISSIONS.REPORT_VIEW, description: 'View reports' },
   { code: PERMISSIONS.REPORT_EXPORT, description: 'Export reports' },
   { code: PERMISSIONS.AUDIT_VIEW, description: 'View the audit log' },
+  { code: PERMISSIONS.IMPORT_PRODUCTS, description: 'Bulk-import products, variants, and barcodes' },
+  { code: PERMISSIONS.IMPORT_SUPPLIERS, description: 'Bulk-import suppliers and supplier-product links' },
+  { code: PERMISSIONS.IMPORT_OPENING_INVENTORY, description: 'Bulk-import opening inventory balances' },
+  { code: PERMISSIONS.EXPORT_CATALOG, description: 'Export catalog data (products, suppliers)' },
+  { code: PERMISSIONS.EXPORT_INVENTORY, description: 'Export inventory data (stock balances)' },
 ];

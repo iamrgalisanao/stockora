@@ -7,6 +7,8 @@ import type {
   AuditPage,
   AuditFilter,
   SearchResult,
+  ImportPreviewResponse,
+  ImportJobResponse,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -329,6 +331,13 @@ export const api = {
   resolve: (code: string) => request<BarcodeResolutionResult>(`/resolve?code=${encodeURIComponent(code)}`),
   resolveDiagnose: (code: string) => request<ScanDiagnosis>(`/resolve/diagnose?code=${encodeURIComponent(code)}`),
   search: (q: string, limit = 30) => request<SearchResult[]>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  imports: {
+    preview: (type: 'products' | 'suppliers' | 'opening-inventory', fileName: string, content: string) =>
+      request<ImportPreviewResponse>(`/imports/${type}/preview`, { method: 'POST', body: JSON.stringify({ fileName, content }) }),
+    commit: (jobId: string) => request<ImportJobResponse>(`/imports/${jobId}/commit`, { method: 'POST' }),
+    job: (jobId: string) => request<ImportPreviewResponse>(`/imports/${jobId}`),
+  },
 
   supplierAdmin: {
     get: (id: string) => request<SupplierResponse>(`/suppliers/${id}`),
