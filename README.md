@@ -27,7 +27,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **2A.1F — Audit Explorer (read-model, correlation, redaction, scoped cursor search, explorer UI):** ✅ [docs/PHASE-2A1F-AUDIT-EXPLORER.md](docs/PHASE-2A1F-AUDIT-EXPLORER.md)
 - **2A.1 master-data operational readiness — complete.**
 - **2A.2A — Global Search (one search entry point across catalog, warehouse, and documents):** ✅ [docs/PHASE-2A2A-GLOBAL-SEARCH.md](docs/PHASE-2A2A-GLOBAL-SEARCH.md)
-- **Next:** 2A.2B Barcode Scanner UX.
+- **2A.2B — Barcode Scanner UX (wedge/manual/camera → BarcodeResolver, identity panel, diagnostic mode):** ✅ [docs/PHASE-2A2B-SCANNER-UX.md](docs/PHASE-2A2B-SCANNER-UX.md)
+- **Next:** 2A.3 Import / Export.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

@@ -61,6 +61,18 @@ export interface BarcodeResolutionResult {
   metadata: { sku: string; name: string };
 }
 
+/** Why a scanned code did (not) resolve — an operator diagnostic, distinct from the plain contract. */
+export const SCAN_OUTCOMES = ['RESOLVED', 'NOT_FOUND', 'INACTIVE', 'ARCHIVED', 'AMBIGUOUS'] as const;
+export type ScanOutcome = (typeof SCAN_OUTCOMES)[number];
+
+export interface ScanDiagnosis {
+  code: string;
+  outcome: ScanOutcome;
+  reason: string | null;
+  /** Present only when outcome === 'RESOLVED'. Identity only — never availability. */
+  result: BarcodeResolutionResult | null;
+}
+
 export interface VariantResponse {
   id: string;
   productId: string;
