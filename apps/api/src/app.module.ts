@@ -21,6 +21,7 @@ import { TransfersModule } from './transfers/transfers.module';
 import { AdjustmentsModule } from './adjustments/adjustments.module';
 import { CountsModule } from './counts/counts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { ReportsModule } from './reports/reports.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -51,6 +52,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     AdjustmentsModule,
     CountsModule,
     AnalyticsModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
   providers: [

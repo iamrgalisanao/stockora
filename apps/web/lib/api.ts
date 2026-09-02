@@ -10,7 +10,12 @@ import type {
   CountResponse,
   CountType,
   DashboardSummary,
+  DeadStockRow,
   ReorderRecommendation,
+  StockStatus,
+  StockStatusRow,
+  ValuationGrouping,
+  ValuationReport,
   LoginRequest,
   OrganizationResponse,
   ProductResponse,
@@ -204,4 +209,11 @@ export const api = {
 
   dashboard: () => request<DashboardSummary>('/dashboard/summary'),
   reorder: () => request<ReorderRecommendation[]>('/reorder/recommendations'),
+
+  reports: {
+    valuation: (groupBy: ValuationGrouping) => request<ValuationReport>(`/reports/valuation?groupBy=${groupBy}`),
+    stockStatus: (status?: StockStatus) =>
+      request<StockStatusRow[]>(`/reports/stock-status${status ? `?status=${status}` : ''}`),
+    deadStock: (days = 90) => request<DeadStockRow[]>(`/reports/dead-stock?days=${days}`),
+  },
 };

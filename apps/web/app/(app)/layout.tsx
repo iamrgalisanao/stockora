@@ -24,6 +24,14 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/counts', label: 'Physical Counts' },
     ],
   },
+  {
+    group: 'Analytics',
+    links: [
+      { href: '/analytics/valuation', label: 'Valuation' },
+      { href: '/analytics/stock-status', label: 'Stock Status' },
+      { href: '/analytics/dead-stock', label: 'Dead Stock' },
+    ],
+  },
   { group: 'Administration', links: [{ href: '/admin/adjustment-reasons', label: 'Adjustment Reasons' }] },
 ];
 
