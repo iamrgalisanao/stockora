@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, setToken } from '../../lib/api';
+import { api, setTokens } from '../../lib/api';
 
 type Mode = 'login' | 'register';
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
               adminName,
               adminPassword: password,
             });
-      setToken(res.accessToken);
+      setTokens(res.accessToken, res.refreshToken);
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');

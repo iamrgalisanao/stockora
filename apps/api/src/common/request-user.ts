@@ -8,6 +8,7 @@ export interface RequestUser {
   userId: string;
   email: string;
   name: string;
+  sessionId: string;
   membershipId: string;
   organizationId: string;
   roleKey: string;
@@ -23,4 +24,5 @@ export interface JwtPayload {
   email: string;
   mid: string; // membership id
   org: string; // organization id
+  sid: string; // session id — lets a session be revoked before the access token expires
 }

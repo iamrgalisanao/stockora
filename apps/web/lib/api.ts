@@ -85,35 +85,68 @@ export interface CreateReceiptBody {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4100';
 const TOKEN_KEY = 'iw_token';
+const REFRESH_KEY = 'iw_refresh';
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  try { return window.localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try { return window.localStorage.getItem(REFRESH_KEY); } catch { return null; }
 }
 
+/** Store the access token only (kept for callers that pass a single token). */
 export function setToken(token: string): void {
+  try { window.localStorage.setItem(TOKEN_KEY, token); } catch { /* ignore */ }
+}
+
+/** Store both tokens from an auth response. */
+export function setTokens(accessToken: string, refreshToken: string): void {
   try {
-    window.localStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    /* ignore storage errors */
-  }
+    window.localStorage.setItem(TOKEN_KEY, accessToken);
+    window.localStorage.setItem(REFRESH_KEY, refreshToken);
+  } catch { /* ignore */ }
 }
 
 export function clearToken(): void {
   try {
     window.localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* ignore */
-  }
+    window.localStorage.removeItem(REFRESH_KEY);
+  } catch { /* ignore */ }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+// Single-flight refresh: concurrent 401s share one rotation so the token isn't reused twice.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (!res.ok) { clearToken(); return false; }
+        const body = (await res.json()) as { accessToken: string; refreshToken: string };
+        setTokens(body.accessToken, body.refreshToken);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+async function rawFetch(path: string, init: RequestInit): Promise<Response> {
   const token = getToken();
-  const res = await fetch(`${API_URL}/api${path}`, {
+  return fetch(`${API_URL}/api${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -121,6 +154,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.headers ?? {}),
     },
   });
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let res = await rawFetch(path, init);
+
+  // Access tokens are short-lived; on a 401 try one silent refresh + retry (except on auth calls).
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    if (await refreshAccessToken()) {
+      res = await rawFetch(path, init);
+    }
+  }
 
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
@@ -161,6 +205,7 @@ export const api = {
   login: (body: LoginRequest) =>
     request<AuthTokenResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   me: () => request<AuthenticatedUser>('/auth/me'),
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
   currentOrganization: () => request<OrganizationResponse>('/organizations/current'),
 
   products: (status?: EntityStatus) => request<ProductResponse[]>(`/products${status ? `?status=${status}` : ''}`),

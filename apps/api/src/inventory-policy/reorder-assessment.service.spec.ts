@@ -19,6 +19,7 @@ describe('ReorderAssessmentService (unit)', () => {
     userId: 'u1',
     email: 'u@x.test',
     name: 'Tester',
+    sessionId: 's1',
     membershipId: 'm1',
     organizationId: ORG,
     roleKey: 'admin',

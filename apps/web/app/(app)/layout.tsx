@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { clearToken, getToken } from '../../lib/api';
+import { api, clearToken, getToken } from '../../lib/api';
 
 const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> }> = [
   { group: 'Overview', links: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/search', label: 'Search' }, { href: '/scan', label: 'Scan' }, { href: '/inventory', label: 'Stock Overview' }] },
@@ -79,7 +79,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <button
             className="btn secondary"
             style={{ width: '100%' }}
-            onClick={() => {
+            onClick={async () => {
+              try { await api.logout(); } catch { /* revoke best-effort */ }
               clearToken();
               router.replace('/login');
             }}

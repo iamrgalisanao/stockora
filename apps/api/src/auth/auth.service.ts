@@ -20,6 +20,7 @@ import { AuditService } from '../audit/audit.service';
 import type { JwtPayload, RequestUser } from '../common/request-user';
 import { RegisterOrganizationDto } from './dto/register-organization.dto';
 import { LoginDto } from './dto/login.dto';
+import { SessionService, type SessionContext } from './session.service';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -45,12 +46,13 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly sessions: SessionService,
   ) {}
 
   // -------------------------------------------------------------------------
   // Registration: create an organization + its first Administrator, atomically.
   // -------------------------------------------------------------------------
-  async register(dto: RegisterOrganizationDto, ip?: string): Promise<AuthTokenResponse> {
+  async register(dto: RegisterOrganizationDto, ip?: string, userAgent?: string): Promise<AuthTokenResponse> {
     const email = dto.adminEmail.toLowerCase().trim();
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -108,13 +110,13 @@ export class AuthService {
       ipAddress: ip,
     });
 
-    return this.buildTokenResponse(principal);
+    return this.buildTokenResponse(principal, { ip, userAgent });
   }
 
   // -------------------------------------------------------------------------
   // Login
   // -------------------------------------------------------------------------
-  async login(dto: LoginDto, ip?: string): Promise<AuthTokenResponse> {
+  async login(dto: LoginDto, ip?: string, userAgent?: string): Promise<AuthTokenResponse> {
     const email = dto.email.toLowerCase().trim();
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -163,7 +165,7 @@ export class AuthService {
       ipAddress: ip,
     });
 
-    return this.buildTokenResponse(principal);
+    return this.buildTokenResponse(principal, { ip, userAgent });
   }
 
   // -------------------------------------------------------------------------
@@ -207,11 +209,12 @@ export class AuthService {
     };
   }
 
-  toRequestUser(p: Principal): RequestUser {
+  toRequestUser(p: Principal, sessionId: string): RequestUser {
     return {
       userId: p.userId,
       email: p.email,
       name: p.name,
+      sessionId,
       membershipId: p.membershipId,
       organizationId: p.organizationId,
       roleKey: p.roleKey,
@@ -235,20 +238,53 @@ export class AuthService {
     };
   }
 
-  private async buildTokenResponse(p: Principal): Promise<AuthTokenResponse> {
+  private async buildTokenResponse(p: Principal, ctx: SessionContext = {}): Promise<AuthTokenResponse> {
+    const session = await this.sessions.create(
+      { userId: p.userId, organizationId: p.organizationId, membershipId: p.membershipId },
+      ctx,
+    );
+    return this.signWith(p, session.sessionId, session.refreshToken, this.toAuthenticatedUser(p));
+  }
+
+  private async signWith(
+    p: { userId: string; email: string; membershipId: string; organizationId: string },
+    sessionId: string,
+    refreshToken: string,
+    user: AuthenticatedUser,
+  ): Promise<AuthTokenResponse> {
     const payload: JwtPayload = {
       sub: p.userId,
       email: p.email,
       mid: p.membershipId,
       org: p.organizationId,
+      sid: sessionId,
     };
     const accessToken = await this.jwt.signAsync(payload);
     return {
       accessToken,
+      refreshToken,
       tokenType: 'Bearer',
-      expiresIn: this.config.get<string>('JWT_EXPIRES_IN', '1d'),
-      user: this.toAuthenticatedUser(p),
+      expiresIn: this.config.get<string>('JWT_EXPIRES_IN', '15m'),
+      refreshExpiresIn: `${this.config.get<number>('REFRESH_TOKEN_TTL_DAYS', 30)}d`,
+      user,
     };
+  }
+
+  /** Exchange a refresh token for a fresh access+refresh pair (rotation). */
+  async refresh(refreshToken: string, ctx: SessionContext = {}): Promise<AuthTokenResponse> {
+    const rotated = await this.sessions.rotate(refreshToken, ctx);
+    const principal = await this.loadPrincipal(rotated.membershipId);
+    return this.signWith(principal, rotated.sessionId, rotated.refreshToken, this.toAuthenticatedUser(principal));
+  }
+
+  /** Revoke the caller's current session. */
+  async logout(sessionId: string): Promise<void> {
+    await this.sessions.revoke(sessionId, 'logout');
+  }
+
+  /** Revoke every active session for the user (sign out everywhere). */
+  async logoutAll(userId: string): Promise<{ revoked: number }> {
+    return { revoked: await this.sessions.revokeAllForUser(userId) };
   }
 
   private async resolveUniqueSlug(source: string): Promise<string> {

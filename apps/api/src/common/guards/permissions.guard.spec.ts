@@ -16,6 +16,7 @@ const baseUser: RequestUser = {
   userId: 'u1',
   email: 'a@b.c',
   name: 'Tester',
+  sessionId: 's1',
   membershipId: 'm1',
   organizationId: 'o1',
   roleKey: 'warehouse_staff',

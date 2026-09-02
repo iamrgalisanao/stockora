@@ -24,9 +24,16 @@ export interface LoginRequest {
 
 export interface AuthTokenResponse {
   accessToken: string;
+  /** Opaque, rotated on every use. Store securely; send to POST /auth/refresh to get a new pair. */
+  refreshToken: string;
   tokenType: 'Bearer';
-  expiresIn: string;
+  expiresIn: string; // access-token TTL
+  refreshExpiresIn: string; // refresh-token TTL
   user: AuthenticatedUser;
+}
+
+export interface RefreshRequest {
+  refreshToken: string;
 }
 
 export interface AuthenticatedUser {
