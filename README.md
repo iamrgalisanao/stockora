@@ -35,10 +35,11 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2A.4B — API hardening (tiered rate limiting, 1 MB payload cap, security headers/CORS allowlist, consistent error shape + structured logging, health/readiness):** ✅ [docs/PHASE-2A4B-API-HARDENING.md](docs/PHASE-2A4B-API-HARDENING.md)
   - **2A.4C — Release engineering (CI: lint/typecheck/test/build + dependency audit; verified backup/recovery runbook):** ✅ [docs/PHASE-2A4C-RELEASE-ENGINEERING.md](docs/PHASE-2A4C-RELEASE-ENGINEERING.md)
 - **✅ Phase 2A — Operational Readiness complete.**
-- **2B.1 — Reservations** (commitments against availability; [ADR 0005](docs/adr/0005-reservations.md)):
+- **✅ 2B.1 — Reservations complete** (commitments against availability; [ADR 0005](docs/adr/0005-reservations.md)):
   - **2B.1A — Reservation Core (create/confirm/release/cancel, availability enforcement, concurrency, audit):** ✅ [docs/PHASE-2B1A-RESERVATION-CORE.md](docs/PHASE-2B1A-RESERVATION-CORE.md)
   - **2B.1B — Consumption (releases consume reservations at line level; atomic on_hand + reserved via the ledger; partial/full; idempotent):** ✅ [docs/PHASE-2B1B-CONSUMPTION.md](docs/PHASE-2B1B-CONSUMPTION.md)
-  - **Next:** 2B.1C Expiry + UX.
+  - **2B.1C — Expiry + UX (auto-expiry returns only unconsumed commitments; operational list/detail/create screens, stock drill-down, filtering):** ✅ [docs/PHASE-2B1C-EXPIRY-UX.md](docs/PHASE-2B1C-EXPIRY-UX.md)
+  - **Next:** 2B.2 Returns + Disposition.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

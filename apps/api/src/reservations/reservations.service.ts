@@ -1,12 +1,23 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma, ReservationStatus } from '@prisma/client';
-import type { ReservationResponse } from '@iw/contracts';
+import { RESERVATION_EXPIRING_SOON_HOURS, type ReservationResponse, type ReservedBreakdownRow } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
 import { isWarehouseAllowed } from '../common/warehouse-scope';
 import { D, NIL_UUID } from '../inventory/inventory.constants';
 import { CreateReservationDto } from './dto/reservation.dto';
+
+export interface ReservationListFilter {
+  status?: ReservationStatus;
+  warehouseId?: string;
+  sourceType?: string;
+  q?: string; // reservation number or product sku
+  expiringSoon?: boolean;
+  from?: string;
+  to?: string;
+}
 
 type Tx = Prisma.TransactionClient;
 
@@ -24,6 +35,8 @@ const RESERVATION_INCLUDE = {
 
 @Injectable()
 export class ReservationsService {
+  private readonly logger = new Logger(ReservationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -31,19 +44,67 @@ export class ReservationsService {
 
   // ---- reads ----
 
-  async list(organizationId: string, user: RequestUser, status?: ReservationStatus): Promise<ReservationResponse[]> {
+  async list(organizationId: string, user: RequestUser, filter: ReservationListFilter = {}): Promise<ReservationResponse[]> {
     const scope = user.warehouseScope;
+    const soonCutoff = new Date(Date.now() + RESERVATION_EXPIRING_SOON_HOURS * 3600_000);
     const rows = await this.prisma.inventoryReservation.findMany({
       where: {
         organizationId,
         ...(scope !== null ? { warehouseId: { in: scope } } : {}),
-        ...(status ? { status } : {}),
+        ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.warehouseId ? { warehouseId: filter.warehouseId } : {}),
+        ...(filter.sourceType ? { sourceType: filter.sourceType as never } : {}),
+        ...(filter.from || filter.to
+          ? { createdAt: { ...(filter.from ? { gte: new Date(filter.from) } : {}), ...(filter.to ? { lte: new Date(filter.to) } : {}) } }
+          : {}),
+        ...(filter.expiringSoon
+          ? { status: { in: ['RESERVED', 'PARTIALLY_CONSUMED'] }, expiresAt: { not: null, lte: soonCutoff } }
+          : {}),
+        ...(filter.q
+          ? {
+              OR: [
+                { reservationNo: { contains: filter.q, mode: 'insensitive' } },
+                { lines: { some: { product: { sku: { contains: filter.q, mode: 'insensitive' } } } } },
+              ],
+            }
+          : {}),
       },
       include: RESERVATION_INCLUDE,
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
     return rows.map((r) => this.toResponse(r));
+  }
+
+  /** The active reservation lines composing a balance's `reserved` bucket (stock drill-down). */
+  async reservedBreakdown(
+    organizationId: string,
+    user: RequestUser,
+    productId: string,
+    warehouseId: string,
+    variantId?: string,
+  ): Promise<ReservedBreakdownRow[]> {
+    if (user.warehouseScope !== null && !user.warehouseScope.includes(warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
+    const lines = await this.prisma.reservationLine.findMany({
+      where: {
+        productId,
+        variantId: variantId ?? NIL_UUID,
+        reservation: { organizationId, warehouseId, status: { in: ['RESERVED', 'PARTIALLY_CONSUMED'] } },
+      },
+      include: { reservation: { select: { reservationNo: true, status: true, expiresAt: true, id: true } } },
+    });
+    return lines
+      .map((l) => ({
+        reservationId: l.reservation.id,
+        reservationNo: l.reservation.reservationNo,
+        lineId: l.id,
+        status: l.reservation.status,
+        remaining: D(l.quantity).sub(l.consumedQuantity).toString(),
+        expiresAt: l.reservation.expiresAt ? l.reservation.expiresAt.toISOString() : null,
+      }))
+      .filter((r) => Number(r.remaining) > 0);
   }
 
   async get(organizationId: string, user: RequestUser, id: string): Promise<ReservationResponse> {
@@ -157,19 +218,7 @@ export class ReservationsService {
     const holdsStock = existing.status === 'RESERVED' || existing.status === 'PARTIALLY_CONSUMED';
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (holdsStock) {
-        const ordered = [...existing.lines].sort((a, b) => `${a.productId}|${a.variantId}`.localeCompare(`${b.productId}|${b.variantId}`));
-        for (const line of ordered) {
-          const remaining = D(line.quantity).sub(line.consumedQuantity);
-          if (remaining.lte(0)) continue;
-          const bal = await this.lockBalance(tx, organizationId, line.productId, line.variantId, existing.warehouseId);
-          const newReserved = bal.reserved.sub(remaining);
-          await tx.inventoryBalance.update({
-            where: { id: bal.id },
-            data: { reserved: newReserved.lt(0) ? new Prisma.Decimal(0) : newReserved, version: { increment: 1 } },
-          });
-        }
-      }
+      if (holdsStock) await this.releaseLineReserved(tx, organizationId, existing.warehouseId, existing.lines);
       return tx.inventoryReservation.update({
         where: { id },
         data: { status: target, completedAt: new Date() },
@@ -247,6 +296,76 @@ export class ReservationsService {
       select: { id: true, reservationNo: true, status: true },
     });
     return { reservationId: res.id, reservationNo: res.reservationNo, status: res.status };
+  }
+
+  // ---- expiry (2B.1C) ----
+
+  /**
+   * Expire every reservation whose `expiresAt <= now` and is still holding stock. Expiry is a state
+   * transition (never deletion): it returns ONLY the remaining reserved quantity to availability,
+   * preserves `consumedQuantity`, sets status EXPIRED, and audits. Idempotent — each reservation is
+   * claimed with a status-guarded update, so a second run (or concurrent runner) can't double-release.
+   */
+  async expireDue(organizationId?: string, actorId?: string | null): Promise<{ expired: number }> {
+    const now = new Date();
+    const due = await this.prisma.inventoryReservation.findMany({
+      where: {
+        ...(organizationId ? { organizationId } : {}),
+        status: { in: ['RESERVED', 'PARTIALLY_CONSUMED'] },
+        expiresAt: { not: null, lte: now },
+      },
+      select: { id: true },
+      take: 500,
+    });
+    if (due.length === 0) return { expired: 0 };
+
+    const correlationId = randomUUID(); // one correlation id for the whole batch run
+    let expired = 0;
+    for (const { id } of due) {
+      const done = await this.prisma.$transaction(async (tx) => {
+        // Claim: only transition if still active — a losing/concurrent run gets count 0 and skips.
+        const claim = await tx.inventoryReservation.updateMany({
+          where: { id, status: { in: ['RESERVED', 'PARTIALLY_CONSUMED'] } },
+          data: { status: 'EXPIRED', completedAt: now },
+        });
+        if (claim.count === 0) return null;
+        const res = await tx.inventoryReservation.findUniqueOrThrow({
+          where: { id },
+          include: RESERVATION_INCLUDE,
+        });
+        await this.releaseLineReserved(tx, res.organizationId, res.warehouseId, res.lines);
+        return res;
+      });
+      if (!done) continue;
+      expired += 1;
+      await this.audit.record({
+        organizationId: done.organizationId, userId: actorId ?? null, source: 'SYSTEM', correlationId,
+        action: 'reservation.expired', entityType: 'reservation', entityId: done.id,
+        entityDisplay: done.reservationNo, warehouseId: done.warehouseId, newValue: { status: 'EXPIRED' },
+      });
+    }
+    if (expired > 0) this.logger.log(`Expired ${expired} reservation(s)`);
+    return { expired };
+  }
+
+  /** Decrement each line's remaining reserved from its balance bucket (shared by release/cancel/expire). */
+  private async releaseLineReserved(
+    tx: Tx,
+    organizationId: string,
+    warehouseId: string,
+    lines: Array<{ productId: string; variantId: string; quantity: Prisma.Decimal; consumedQuantity: Prisma.Decimal }>,
+  ): Promise<void> {
+    const ordered = [...lines].sort((a, b) => `${a.productId}|${a.variantId}`.localeCompare(`${b.productId}|${b.variantId}`));
+    for (const line of ordered) {
+      const remaining = D(line.quantity).sub(line.consumedQuantity);
+      if (remaining.lte(0)) continue;
+      const bal = await this.lockBalance(tx, organizationId, line.productId, line.variantId, warehouseId);
+      const newReserved = bal.reserved.sub(remaining);
+      await tx.inventoryBalance.update({
+        where: { id: bal.id },
+        data: { reserved: newReserved.lt(0) ? new Prisma.Decimal(0) : newReserved, version: { increment: 1 } },
+      });
+    }
   }
 
   // ---- helpers ----

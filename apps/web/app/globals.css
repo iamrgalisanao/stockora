@@ -123,6 +123,7 @@ table.grid td.num, table.grid th.num { text-align: right; font-variant-numeric: 
 .toolbar { display: flex; gap: 8px; align-items: center; }
 .field-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; }
 .inline { display: inline-block; width: auto; }
+.linklike { background: none; border: none; padding: 0; margin: 0; width: auto; color: var(--accent); font: inherit; font-variant-numeric: tabular-nums; cursor: pointer; text-decoration: underline dotted; }
 
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 50; }
 .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 380px; max-width: 90vw; background: var(--panel); border-left: 1px solid var(--border); padding: 20px; overflow-y: auto; }

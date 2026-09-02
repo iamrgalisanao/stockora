@@ -14,6 +14,7 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/receiving', label: 'Receiving' },
       { href: '/releases', label: 'Releases' },
       { href: '/transfers', label: 'Transfers' },
+      { href: '/reservations', label: 'Reservations' },
     ],
   },
   { group: 'Supply', links: [{ href: '/reorder', label: 'Reorder' }] },

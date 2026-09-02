@@ -18,6 +18,19 @@ export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
 export const RESERVATION_SOURCES = ['MANUAL', 'INTERNAL_REQUEST', 'EXTERNAL'] as const;
 export type ReservationSource = (typeof RESERVATION_SOURCES)[number];
 
+/** Centralized "expiring soon" window (hours) — one source of truth for API queries + UI. */
+export const RESERVATION_EXPIRING_SOON_HOURS = 24;
+
+/** The active reservation lines that make up a balance's `reserved` bucket (stock drill-down). */
+export interface ReservedBreakdownRow {
+  reservationId: string;
+  reservationNo: string;
+  lineId: string;
+  status: ReservationStatus;
+  remaining: string;
+  expiresAt: string | null;
+}
+
 export interface ReservationLineResponse {
   id: string;
   productId: string;
