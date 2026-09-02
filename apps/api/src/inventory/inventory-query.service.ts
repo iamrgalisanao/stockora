@@ -48,6 +48,7 @@ export class InventoryQueryService {
         productSku: b.product.sku,
         productName: b.product.name,
         variantId: b.variantId === NIL_UUID ? null : b.variantId,
+        lotId: b.lotId === NIL_UUID ? null : b.lotId,
         warehouseId: b.warehouseId,
         warehouseCode: b.warehouse.code,
         onHand: onHand.toString(),
@@ -66,7 +67,7 @@ export class InventoryQueryService {
   async listMovements(
     organizationId: string,
     user: RequestUser,
-    filter: { productId?: string; warehouseId?: string; type?: MovementType; limit?: number },
+    filter: { productId?: string; warehouseId?: string; type?: MovementType; lotId?: string; limit?: number },
   ): Promise<MovementResponse[]> {
     const scope = this.scopeFilter(user);
     const rows = await this.prisma.inventoryMovement.findMany({
@@ -75,6 +76,7 @@ export class InventoryQueryService {
         ...(filter.productId ? { productId: filter.productId } : {}),
         ...(filter.warehouseId ? { warehouseId: filter.warehouseId } : {}),
         ...(filter.type ? { movementType: filter.type } : {}),
+        ...(filter.lotId ? { lotId: filter.lotId } : {}),
         ...(scope ? { warehouseId: scope } : {}),
       },
       include: { product: { select: { sku: true } }, warehouse: { select: { code: true } } },
@@ -228,6 +230,7 @@ export class InventoryQueryService {
       productId: m.productId,
       productSku: m.product.sku,
       variantId: m.variantId,
+      lotId: m.lotId,
       warehouseId: m.warehouseId,
       warehouseCode: m.warehouse.code,
       quantity: m.quantity.toString(),

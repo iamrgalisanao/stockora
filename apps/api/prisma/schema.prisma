@@ -621,6 +621,8 @@ enum MovementType {
   RETURN_RECEIPT
   RETURN_RESTOCK
   RETURN_DISPOSE
+  // Batch/lot tracking (2C.1, ADR 0007). One-time repoint of legacy NIL-lot stock onto a synthetic lot.
+  LOT_MIGRATION
 }
 
 // Append-only ledger. Each row records the explicit signed delta to every stock
@@ -652,7 +654,8 @@ model InventoryMovement {
   unitCost  Decimal @default(0) @map("unit_cost") @db.Decimal(18, 4)
   totalCost Decimal @default(0) @map("total_cost") @db.Decimal(18, 4)
 
-  batchId  String? @map("batch_id") @db.Uuid
+  // Lot grain (ADR 0007). Real nullable FK: null for non-batch stock, the lot's id for batch-tracked.
+  lotId    String? @map("lot_id") @db.Uuid
   serialId String? @map("serial_id") @db.Uuid
 
   referenceType String? @map("reference_type")
@@ -669,6 +672,7 @@ model InventoryMovement {
   product   Product            @relation(fields: [productId], references: [id])
   variant   ProductVariant?    @relation(fields: [variantId], references: [id])
   warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
+  lot       InventoryLot?      @relation(fields: [lotId], references: [id])
   reversalOf InventoryMovement? @relation("Reversal", fields: [reversalOfId], references: [id])
   reversedBy InventoryMovement[] @relation("Reversal")
 
@@ -676,6 +680,7 @@ model InventoryMovement {
   @@index([organizationId, productId, postedAt])
   @@index([organizationId, warehouseId, postedAt])
   @@index([organizationId, referenceType, referenceId])
+  @@index([organizationId, lotId, postedAt])
   @@map("inventory_movements")
 }
 
@@ -688,6 +693,9 @@ model InventoryBalance {
   productId      String @map("product_id") @db.Uuid
   variantId      String @map("variant_id") @db.Uuid
   warehouseId    String @map("warehouse_id") @db.Uuid
+  // Lot grain (ADR 0007). NIL-UUID sentinel = non-lot-tracked stock (keeps the unique key NULL-free,
+  // like variantId). No FK — the sentinel is not a real lot row.
+  lotId          String @default("00000000-0000-0000-0000-000000000000") @map("lot_id") @db.Uuid
 
   onHand      Decimal @default(0) @map("on_hand") @db.Decimal(18, 4)
   reserved    Decimal @default(0) @db.Decimal(18, 4)
@@ -703,7 +711,7 @@ model InventoryBalance {
   product   Product   @relation(fields: [productId], references: [id])
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
 
-  @@unique([organizationId, productId, variantId, warehouseId])
+  @@unique([organizationId, productId, variantId, warehouseId, lotId])
   @@index([organizationId, warehouseId])
   @@index([organizationId, productId])
   @@map("inventory_balances")
@@ -870,6 +878,7 @@ model Product {
   inventoryPolicies InventoryPolicy[]
   reservationLines  ReservationLine[]
   returnLines       ReturnLine[]
+  lots              InventoryLot[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, categoryId])
@@ -1091,6 +1100,47 @@ model ReturnDisposition {
   @@map("return_dispositions")
 }
 
+enum LotStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum LotOrigin {
+  RECEIPT
+  OPENING
+  LEGACY_MIGRATION
+}
+
+/// A batch/lot — physical traceability identity for a product (ADR 0007). NOT master data and NOT a cost
+/// layer. Uniqueness is per (org, product, variant, lotNumber); warehouse is deliberately NOT part of
+/// identity so a lot keeps the same id as it moves between warehouses. variantId uses the NIL-UUID
+/// sentinel for base product (matches the balance/movement grain; no FK, like the balance projection).
+model InventoryLot {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  productId      String     @map("product_id") @db.Uuid
+  variantId      String     @map("variant_id") @db.Uuid
+  lotNumber      String     @map("lot_number")
+  manufacturedAt DateTime?  @map("manufactured_at")
+  expiryDate     DateTime?  @map("expiry_date")
+  receivedAt     DateTime?  @map("received_at")
+  supplierId     String?    @map("supplier_id") @db.Uuid
+  status         LotStatus  @default(ACTIVE)
+  origin         LotOrigin  @default(RECEIPT)
+  attributes     Json?
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  product   Product             @relation(fields: [productId], references: [id])
+  supplier  Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  movements InventoryMovement[]
+
+  @@unique([organizationId, productId, variantId, lotNumber])
+  @@index([organizationId, productId, variantId])
+  @@index([organizationId, expiryDate])
+  @@map("inventory_lots")
+}
+
 model WarehouseLocation {
   id              String   @id @default(uuid()) @db.Uuid
   organizationId  String   @map("organization_id") @db.Uuid
@@ -1145,6 +1195,7 @@ model Supplier {
 
   supplierProducts     SupplierProduct[]
   preferredForProducts Product[]         @relation("PreferredSupplier")
+  lots                 InventoryLot[]
   goodsReceipts        GoodsReceipt[]
   inventoryPolicies    InventoryPolicy[]
 

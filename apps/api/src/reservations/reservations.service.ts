@@ -428,15 +428,17 @@ export class ReservationsService {
     variantId: string,
     warehouseId: string,
   ): Promise<{ id: string; onHand: Prisma.Decimal; reserved: Prisma.Decimal; quarantined: Prisma.Decimal }> {
+    // Reservations are lot-agnostic (ADR 0007 §7): they commit against the product/warehouse position,
+    // which for non-batch stock is the NIL-lot balance row. Lot-level allocation happens at release (2C.1B).
     await tx.$executeRaw`
-      INSERT INTO inventory_balances (id, organization_id, product_id, variant_id, warehouse_id, updated_at)
-      VALUES (gen_random_uuid(), ${organizationId}::uuid, ${productId}::uuid, ${variantId}::uuid, ${warehouseId}::uuid, now())
-      ON CONFLICT (organization_id, product_id, variant_id, warehouse_id) DO NOTHING`;
+      INSERT INTO inventory_balances (id, organization_id, product_id, variant_id, warehouse_id, lot_id, updated_at)
+      VALUES (gen_random_uuid(), ${organizationId}::uuid, ${productId}::uuid, ${variantId}::uuid, ${warehouseId}::uuid, ${NIL_UUID}::uuid, now())
+      ON CONFLICT (organization_id, product_id, variant_id, warehouse_id, lot_id) DO NOTHING`;
     const rows = await tx.$queryRaw<Array<{ id: string; on_hand: string; reserved: string; quarantined: string }>>`
       SELECT id, on_hand::text, reserved::text, quarantined::text
       FROM inventory_balances
       WHERE organization_id = ${organizationId}::uuid AND product_id = ${productId}::uuid
-        AND variant_id = ${variantId}::uuid AND warehouse_id = ${warehouseId}::uuid
+        AND variant_id = ${variantId}::uuid AND warehouse_id = ${warehouseId}::uuid AND lot_id = ${NIL_UUID}::uuid
       FOR UPDATE`;
     const r = rows[0]!;
     return { id: r.id, onHand: D(r.on_hand), reserved: D(r.reserved), quarantined: D(r.quarantined) };

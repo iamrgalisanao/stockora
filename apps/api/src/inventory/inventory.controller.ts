@@ -20,6 +20,7 @@ import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { InventoryPostingService } from './inventory-posting.service';
 import { InventoryQueryService } from './inventory-query.service';
+import { LotsService } from '../lots/lots.service';
 import { OpeningBalanceDto, ReverseMovementDto } from './dto/opening-balance.dto';
 
 @Controller('inventory')
@@ -27,6 +28,7 @@ export class InventoryController {
   constructor(
     private readonly posting: InventoryPostingService,
     private readonly query: InventoryQueryService,
+    private readonly lots: LotsService,
   ) {}
 
   // ---- queries ----
@@ -48,12 +50,14 @@ export class InventoryController {
     @Query('productId') productId?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('type') type?: MovementType,
+    @Query('lotId') lotId?: string,
     @Query('limit') limit?: string,
   ): Promise<MovementResponse[]> {
     return this.query.listMovements(user.organizationId, user, {
       productId,
       warehouseId,
       type,
+      lotId,
       limit: limit ? Number(limit) : undefined,
     });
   }
@@ -77,9 +81,12 @@ export class InventoryController {
     @Body() dto: OpeningBalanceDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<MovementResponse[]> {
+    // Resolve lot metadata → lotId per line (ADR 0007) before posting; the posting layer then enforces
+    // the batch-tracked ⟺ lot invariant.
+    const lines = await this.lots.resolveEntryLines(user.organizationId, user.userId, dto.lines, 'OPENING');
     const movements = await this.posting.openingBalance(
       { organizationId: user.organizationId, actorId: user.userId, idempotencyKey, reason: dto.reason },
-      { warehouseId: dto.warehouseId, lines: dto.lines },
+      { warehouseId: dto.warehouseId, lines },
     );
     return this.query.getMovements(user.organizationId, user, movements.map((m) => m.id));
   }

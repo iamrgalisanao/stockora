@@ -7,6 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
+import { LotsService } from '../lots/lots.service';
+import { NIL_UUID } from '../inventory/inventory.constants';
 import { CreateReceiptDto, ReceiptItemInputDto, UpdateReceiptDto } from './dto/receipt.dto';
 
 const POSTABLE: ReceiptStatus[] = [ReceiptStatus.DRAFT, ReceiptStatus.RECEIVING, ReceiptStatus.FOR_INSPECTION];
@@ -26,6 +28,7 @@ export class ReceivingService {
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
+    private readonly lots: LotsService,
   ) {}
 
   async list(organizationId: string, user: RequestUser): Promise<ReceiptListItem[]> {
@@ -146,17 +149,30 @@ export class ReceivingService {
       throw new BadRequestException(`A ${receipt.status} receipt cannot be posted`);
     }
 
-    const lines = receipt.items
-      .filter((i) => new Prisma.Decimal(i.receivedQty).gt(0))
-      .map((i) => ({
-        productId: i.productId,
-        variantId: i.variantId,
-        quantity: i.receivedQty,
-        unitCost: i.unitCost,
-        locationId: i.locationId,
-      }));
-    if (lines.length === 0) {
+    const receivedItems = receipt.items.filter((i) => new Prisma.Decimal(i.receivedQty).gt(0));
+    if (receivedItems.length === 0) {
       throw new BadRequestException('No received quantities to post');
+    }
+
+    // Resolve lots for batch-tracked items (ADR 0007). A batch-tracked line must carry a lot number
+    // (its `batchNumber`); a non-batch line keeps `batchNumber` only as free-text and posts with no lot.
+    const tracked = new Map(
+      (await this.prisma.product.findMany({
+        where: { id: { in: [...new Set(receivedItems.map((i) => i.productId))] }, organizationId },
+        select: { id: true, isBatchTracked: true },
+      })).map((p) => [p.id, p.isBatchTracked]),
+    );
+    const lines = [];
+    for (const i of receivedItems) {
+      const isBatchTracked = tracked.get(i.productId) ?? false;
+      const lotId = isBatchTracked
+        ? await this.lots.resolveLotId(
+            organizationId, user.userId, i.productId, i.variantId ?? NIL_UUID, true,
+            { lotNumber: i.batchNumber ?? undefined, expiryDate: i.expiryDate ? i.expiryDate.toISOString() : undefined, supplierId: receipt.supplierId ?? undefined },
+            'RECEIPT',
+          )
+        : null;
+      lines.push({ productId: i.productId, variantId: i.variantId, quantity: i.receivedQty, unitCost: i.unitCost, locationId: i.locationId, lotId });
     }
 
     await this.posting.receipt(

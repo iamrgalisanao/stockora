@@ -8,6 +8,7 @@ export interface BalanceResponse {
   productSku: string;
   productName: string;
   variantId: string | null;
+  lotId: string | null; // ADR 0007 — null for non-batch stock
   warehouseId: string;
   warehouseCode: string;
   onHand: string;
@@ -28,6 +29,7 @@ export interface MovementResponse {
   productId: string;
   productSku: string;
   variantId: string | null;
+  lotId: string | null;
   warehouseId: string;
   warehouseCode: string;
   quantity: string;

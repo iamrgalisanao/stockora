@@ -20,6 +20,8 @@ export interface StockLine {
   quantity: Prisma.Decimal.Value;
   unitCost?: Prisma.Decimal.Value | null;
   locationId?: string | null;
+  /** Lot identity (ADR 0007). Required for batch-tracked products, forbidden otherwise. */
+  lotId?: string | null;
   /** Override the default bucket deltas — e.g. consuming a reservation drops on_hand AND reserved. */
   deltas?: BucketDeltas;
 }
@@ -30,6 +32,8 @@ export interface PostContext {
   idempotencyKey?: string | null;
   allowNegative?: boolean; // caller-supplied negative override (requires permission upstream)
   reason?: string | null;
+  /** Skip the batch/lot posting policy — only the legacy-lot backfill sets this (ADR 0007). */
+  bypassLotPolicy?: boolean;
 }
 
 interface MovementSpec {
@@ -40,6 +44,7 @@ interface MovementSpec {
   locationId?: string | null;
   quantity: Dec;
   unitCost?: Dec | null;
+  lotId?: string | null;
   deltas?: BucketDeltas;
   referenceType?: string | null;
   referenceId?: string | null;
@@ -156,6 +161,7 @@ export class InventoryPostingService {
       locationId: input.line.locationId ?? null,
       quantity: D(input.line.quantity),
       unitCost: input.line.unitCost != null ? D(input.line.unitCost) : null,
+      lotId: input.line.lotId ?? null,
       deltas: input.line.deltas,
       referenceType: input.referenceType,
       referenceId: input.referenceId,
@@ -163,6 +169,17 @@ export class InventoryPostingService {
       reason: ctx.reason ?? null,
       allowNegative: ctx.allowNegative,
     });
+  }
+
+  /**
+   * Legacy-lot backfill posting (ADR 0007) — a set of balancing LOT_MIGRATION movements that repoint
+   * NIL-grain stock onto a synthetic lot. The caller sets `bypassLotPolicy` and passes explicit deltas.
+   */
+  migrate(
+    ctx: PostContext,
+    input: { warehouseId: string; referenceId?: string; lines: StockLine[] },
+  ): Promise<InventoryMovement[]> {
+    return this.postLines(ctx, MovementType.LOT_MIGRATION, input.warehouseId, input.lines, 'lot_migration', input.referenceId);
   }
 
   /** Stock adjustment in/out with a reason. */
@@ -273,6 +290,7 @@ export class InventoryPostingService {
           locationId: original.locationId,
           quantity: D(original.quantity),
           unitCost: D(original.unitCost),
+          lotId: original.lotId,
           deltas,
           referenceType: 'reversal',
           referenceId: original.id,
@@ -308,6 +326,7 @@ export class InventoryPostingService {
       locationId: line.locationId ?? null,
       quantity: D(line.quantity),
       unitCost: line.unitCost != null ? D(line.unitCost) : null,
+      lotId: line.lotId ?? null,
       deltas: line.deltas,
       referenceType,
       referenceId: ref,
@@ -374,7 +393,7 @@ export class InventoryPostingService {
 
     const product = await tx.product.findFirst({
       where: { id: spec.productId, organizationId: ctx.organizationId },
-      select: { id: true, baseUomId: true, allowNegative: true },
+      select: { id: true, baseUomId: true, allowNegative: true, isBatchTracked: true },
     });
     if (!product) throw new BadRequestException(`Product ${spec.productId} not found`);
 
@@ -392,14 +411,41 @@ export class InventoryPostingService {
       if (!variant) throw new BadRequestException(`Variant ${spec.variantId} not found for product`);
     }
 
-    const deltas = spec.deltas ?? bucketDeltasFor(spec.movementType, qty);
+    // Lot policy (ADR 0007): batch-tracked products require a lot on every physical posting; non-batch
+    // products must not carry one. The legacy backfill is the only caller that bypasses this.
     const variantKey = spec.variantId ?? NIL_UUID;
+    const lotId = spec.lotId ?? null;
+    if (!ctx.bypassLotPolicy) {
+      if (product.isBatchTracked && !lotId) {
+        throw new BadRequestException('This product is batch-tracked; a lot is required for this posting');
+      }
+      if (!product.isBatchTracked && lotId) {
+        throw new BadRequestException('This product is not batch-tracked and cannot be posted against a lot');
+      }
+    }
+    if (lotId) {
+      const lot = await tx.inventoryLot.findFirst({
+        where: { id: lotId, organizationId: ctx.organizationId },
+        select: { productId: true, variantId: true, status: true },
+      });
+      if (!lot) throw new BadRequestException('Lot not found');
+      if (lot.productId !== spec.productId || lot.variantId !== variantKey) {
+        throw new BadRequestException('Lot does not belong to this product/variant');
+      }
+      if (!ctx.bypassLotPolicy && lot.status !== 'ACTIVE') {
+        throw new BadRequestException(`Lot is ${lot.status} and cannot receive new stock`);
+      }
+    }
+    const lotKey = lotId ?? NIL_UUID;
+
+    const deltas = spec.deltas ?? bucketDeltasFor(spec.movementType, qty);
     const bal = await this.lockOrCreateBalance(
       tx,
       ctx.organizationId,
       spec.productId,
       variantKey,
       spec.warehouseId,
+      lotKey,
     );
 
     const newOnHand = bal.onHand.add(deltas.onHand);
@@ -462,6 +508,7 @@ export class InventoryPostingService {
         inTransitDelta: deltas.inTransit,
         quarantinedDelta: deltas.quarantined,
         damagedDelta: deltas.damaged,
+        lotId: spec.lotId ?? null,
         unitCost,
         totalCost,
         referenceType: spec.referenceType ?? null,
@@ -502,12 +549,13 @@ export class InventoryPostingService {
     productId: string,
     variantKey: string,
     warehouseId: string,
+    lotKey: string,
   ): Promise<BalanceRow> {
     const id = randomUUID();
     await tx.$executeRaw`
-      INSERT INTO inventory_balances (id, organization_id, product_id, variant_id, warehouse_id, updated_at)
-      VALUES (${id}::uuid, ${organizationId}::uuid, ${productId}::uuid, ${variantKey}::uuid, ${warehouseId}::uuid, now())
-      ON CONFLICT (organization_id, product_id, variant_id, warehouse_id) DO NOTHING`;
+      INSERT INTO inventory_balances (id, organization_id, product_id, variant_id, warehouse_id, lot_id, updated_at)
+      VALUES (${id}::uuid, ${organizationId}::uuid, ${productId}::uuid, ${variantKey}::uuid, ${warehouseId}::uuid, ${lotKey}::uuid, now())
+      ON CONFLICT (organization_id, product_id, variant_id, warehouse_id, lot_id) DO NOTHING`;
 
     const rows = await tx.$queryRaw<
       Array<{
@@ -526,6 +574,7 @@ export class InventoryPostingService {
         AND product_id = ${productId}::uuid
         AND variant_id = ${variantKey}::uuid
         AND warehouse_id = ${warehouseId}::uuid
+        AND lot_id = ${lotKey}::uuid
       FOR UPDATE`;
 
     const r = rows[0]!;

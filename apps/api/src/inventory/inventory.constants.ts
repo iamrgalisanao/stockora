@@ -68,6 +68,10 @@ export function bucketDeltasFor(type: MovementType, qty: Dec): BucketDeltas {
     case MovementType.EXPIRY:
       return { ...d, onHand: qty.neg(), damaged: qty };
 
+    case MovementType.LOT_MIGRATION:
+      // The legacy-lot backfill always passes explicit deltas (a bucket -q at NIL, +q at the lot).
+      return d;
+
     default: {
       // Exhaustiveness guard — a new MovementType must declare its deltas here.
       const _exhaustive: never = type;
