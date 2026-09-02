@@ -379,12 +379,16 @@ model StockReleaseItem {
   approvedQty    Decimal @default(0) @map("approved_qty") @db.Decimal(18, 4)
   releasedQty    Decimal @default(0) @map("released_qty") @db.Decimal(18, 4)
   locationId     String? @map("location_id") @db.Uuid
+  // Optional line-level link: posting this line consumes the referenced reservation (2B.1B).
+  reservationLineId String? @map("reservation_line_id") @db.Uuid
   remarks        String?
 
   release StockRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
   product Product      @relation(fields: [productId], references: [id])
+  reservationLine ReservationLine? @relation(fields: [reservationLineId], references: [id], onDelete: SetNull)
 
   @@index([releaseId])
+  @@index([reservationLineId])
   @@map("stock_release_items")
 }
 
@@ -986,8 +990,9 @@ model ReservationLine {
   quantity         Decimal  @db.Decimal(18, 4)
   consumedQuantity Decimal  @default(0) @map("consumed_quantity") @db.Decimal(18, 4)
 
-  reservation InventoryReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  product     Product              @relation(fields: [productId], references: [id])
+  reservation  InventoryReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  product      Product              @relation(fields: [productId], references: [id])
+  releaseItems StockReleaseItem[]
 
   @@index([reservationId])
   @@index([productId, variantId])

@@ -6,6 +6,8 @@ import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
+import { ReservationsService } from '../reservations/reservations.service';
+import { NIL_UUID } from '../inventory/inventory.constants';
 import {
   ApproveReleaseDto,
   CreateReleaseDto,
@@ -28,6 +30,7 @@ export class ReleasesService {
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
+    private readonly reservations: ReservationsService,
   ) {}
 
   async list(organizationId: string, user: RequestUser): Promise<ReleaseListItem[]> {
@@ -82,6 +85,7 @@ export class ReleasesService {
             variantId: i.variantId ?? null,
             requestedQty: i.requestedQty,
             locationId: i.locationId ?? null,
+            reservationLineId: i.reservationLineId ?? null,
             remarks: i.remarks ?? null,
           })),
         },
@@ -216,15 +220,33 @@ export class ReleasesService {
     // Approval is mandatory before posting (product decision).
     this.assertStatus(release, [ReleaseStatus.APPROVED], 'released');
 
-    const lines = release.items
-      .filter((i) => new Prisma.Decimal(i.approvedQty).gt(0))
-      .map((i) => ({
+    const approved = release.items.filter((i) => new Prisma.Decimal(i.approvedQty).gt(0));
+    if (approved.length === 0) throw new BadRequestException('No approved quantities to release');
+
+    // Validate every reservation-backed line up front (clean error before any posting).
+    for (const i of approved) {
+      if (i.reservationLineId) {
+        await this.reservations.validateConsumable(
+          organizationId, i.reservationLineId, release.warehouseId, i.productId, i.variantId ?? NIL_UUID,
+          new Prisma.Decimal(i.approvedQty),
+        );
+      }
+    }
+
+    // A reserved line drops on_hand AND reserved atomically in one movement; an unreserved line
+    // uses the default SALES_RELEASE delta (on_hand only).
+    const lines = approved.map((i) => {
+      const q = new Prisma.Decimal(i.approvedQty);
+      return {
         productId: i.productId,
         variantId: i.variantId,
         quantity: i.approvedQty,
         locationId: i.locationId,
-      }));
-    if (lines.length === 0) throw new BadRequestException('No approved quantities to release');
+        ...(i.reservationLineId
+          ? { deltas: { onHand: q.neg(), reserved: q.neg(), inTransit: new Prisma.Decimal(0), quarantined: new Prisma.Decimal(0), damaged: new Prisma.Decimal(0) } }
+          : {}),
+      };
+    });
 
     await this.posting.release(
       {
@@ -235,23 +257,37 @@ export class ReleasesService {
       { warehouseId: release.warehouseId, referenceType: 'stock_release', referenceId: release.id, lines },
     );
 
-    await this.prisma.$transaction(async (tx) => {
+    const consumed = await this.prisma.$transaction(async (tx) => {
+      const results: Array<{ reservationId: string; reservationNo: string; status: string }> = [];
       for (const item of release.items) {
         await tx.stockReleaseItem.update({ where: { id: item.id }, data: { releasedQty: item.approvedQty } });
+        if (item.reservationLineId && new Prisma.Decimal(item.approvedQty).gt(0)) {
+          results.push(await this.reservations.recordConsumption(tx, item.reservationLineId, new Prisma.Decimal(item.approvedQty)));
+        }
       }
       await tx.stockRelease.update({
         where: { id },
         data: { status: ReleaseStatus.RELEASED, releasedById: user.userId, postedAt: new Date() },
       });
+      return results;
     });
+
     await this.audit.record({
       organizationId,
       userId: user.userId,
       action: 'stock_release.posted',
       entityType: 'stock_release',
       entityId: id,
-      newValue: { lines: lines.length },
+      newValue: { lines: lines.length, reservationsConsumed: consumed.length },
     });
+    // A consumed reservation's own history records the consumption + resulting status.
+    for (const c of consumed) {
+      await this.audit.record({
+        organizationId, userId: user.userId, action: 'reservation.consumed', entityType: 'reservation',
+        entityId: c.reservationId, entityDisplay: c.reservationNo, warehouseId: release.warehouseId,
+        reference: release.releaseNumber, newValue: { status: c.status },
+      });
+    }
     return this.get(organizationId, user, id);
   }
 
@@ -329,6 +365,7 @@ export class ReleasesService {
         approvedQty: i.approvedQty.toString(),
         releasedQty: i.releasedQty.toString(),
         locationId: i.locationId,
+        reservationLineId: i.reservationLineId,
         remarks: i.remarks,
       })),
     };
