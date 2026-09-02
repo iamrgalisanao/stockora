@@ -617,6 +617,10 @@ enum MovementType {
   PRODUCTION_OUTPUT
   PROJECT_ISSUE
   INTERNAL_CONSUMPTION
+  // Returns + disposition (2B.2, ADR 0006). Intake lands in quarantine; dispositions draw it back down.
+  RETURN_RECEIPT
+  RETURN_RESTOCK
+  RETURN_DISPOSE
 }
 
 // Append-only ledger. Each row records the explicit signed delta to every stock
@@ -865,6 +869,7 @@ model Product {
   barcodes          ProductBarcode[]
   inventoryPolicies InventoryPolicy[]
   reservationLines  ReservationLine[]
+  returnLines       ReturnLine[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, categoryId])
@@ -931,6 +936,7 @@ model Warehouse {
   stockCounts   StockCount[]
   inventoryPolicies InventoryPolicy[]
   reservations  InventoryReservation[]
+  returns       InventoryReturn[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -997,6 +1003,92 @@ model ReservationLine {
   @@index([reservationId])
   @@index([productId, variantId])
   @@map("reservation_lines")
+}
+
+enum ReturnType {
+  CUSTOMER
+  SUPPLIER
+  INTERNAL
+}
+
+enum ReturnStatus {
+  DRAFT
+  RECEIVED
+  PARTIALLY_DISPOSED
+  COMPLETED
+  CANCELLED
+}
+
+enum DispositionType {
+  RESTOCK
+  DAMAGED
+  RETURN_TO_SUPPLIER
+  DISPOSE
+}
+
+/// A reverse-logistics document (ADR 0006). Receiving a return lands stock in QUARANTINE via a
+/// RETURN_RECEIPT movement (on_hand +q, quarantined +q — physically present but not sellable).
+/// Disposition (2B.2B) draws it back out. Document status encodes workflow, never inventory condition.
+model InventoryReturn {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  returnNo        String       @map("return_no")
+  type            ReturnType
+  warehouseId     String       @map("warehouse_id") @db.Uuid
+  sourceReference String?      @map("source_reference") // opaque external ref (order/RMA/etc.)
+  status          ReturnStatus @default(DRAFT)
+  reason          String?
+  notes           String?
+  createdById     String?      @map("created_by_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  receivedAt      DateTime?    @map("received_at")
+  completedAt     DateTime?    @map("completed_at")
+
+  warehouse Warehouse    @relation(fields: [warehouseId], references: [id])
+  lines     ReturnLine[]
+
+  @@unique([organizationId, returnNo])
+  @@index([organizationId, status])
+  @@index([organizationId, warehouseId, status])
+  @@map("inventory_returns")
+}
+
+model ReturnLine {
+  id               String  @id @default(uuid()) @db.Uuid
+  returnId         String  @map("return_id") @db.Uuid
+  productId        String  @map("product_id") @db.Uuid
+  // NIL-UUID sentinel = base product (matches the balance projection grain).
+  variantId        String  @map("variant_id") @db.Uuid
+  locationId       String? @map("location_id") @db.Uuid
+  quantity         Decimal @db.Decimal(18, 4) // declared at DRAFT
+  receivedQuantity Decimal @default(0) @map("received_quantity") @db.Decimal(18, 4)
+  disposedQuantity Decimal @default(0) @map("disposed_quantity") @db.Decimal(18, 4)
+
+  return       InventoryReturn     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  product      Product             @relation(fields: [productId], references: [id])
+  dispositions ReturnDisposition[]
+
+  @@index([returnId])
+  @@index([productId, variantId])
+  @@map("return_lines")
+}
+
+/// One inspection decision against a return line (2B.2B). A line may split across several rows.
+/// Each disposition is an immutable ledger posting; the row records who/what/when for history.
+model ReturnDisposition {
+  id            String          @id @default(uuid()) @db.Uuid
+  returnLineId  String          @map("return_line_id") @db.Uuid
+  type          DispositionType
+  quantity      Decimal         @db.Decimal(18, 4)
+  reason        String?
+  notes         String?
+  performedById String?         @map("performed_by_id") @db.Uuid
+  performedAt   DateTime        @default(now()) @map("performed_at")
+
+  returnLine ReturnLine @relation(fields: [returnLineId], references: [id], onDelete: Cascade)
+
+  @@index([returnLineId])
+  @@map("return_dispositions")
 }
 
 model WarehouseLocation {

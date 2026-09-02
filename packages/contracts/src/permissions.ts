@@ -51,6 +51,13 @@ export const PERMISSIONS = {
   RESERVATION_RELEASE: 'reservation.release',
   RESERVATION_CANCEL: 'reservation.cancel',
   RESERVATION_OVERRIDE: 'reservation.override',
+
+  // Returns + disposition (2B.2) — reverse logistics into quarantine
+  RETURN_VIEW: 'return.view',
+  RETURN_CREATE: 'return.create',
+  RETURN_RECEIVE: 'return.receive',
+  RETURN_INSPECT: 'return.inspect',
+  RETURN_DISPOSE: 'return.dispose',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -96,4 +103,9 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { code: PERMISSIONS.RESERVATION_RELEASE, description: 'Release reserved stock back to availability' },
   { code: PERMISSIONS.RESERVATION_CANCEL, description: 'Cancel reservations' },
   { code: PERMISSIONS.RESERVATION_OVERRIDE, description: 'Override reservation limits (oversubscription)' },
+  { code: PERMISSIONS.RETURN_VIEW, description: 'View returns and their dispositions' },
+  { code: PERMISSIONS.RETURN_CREATE, description: 'Create (draft) return documents' },
+  { code: PERMISSIONS.RETURN_RECEIVE, description: 'Receive returned stock into quarantine' },
+  { code: PERMISSIONS.RETURN_INSPECT, description: 'Inspect quarantined returns and restock' },
+  { code: PERMISSIONS.RETURN_DISPOSE, description: 'Dispose returns (damaged / return-to-supplier / dispose)' },
 ];

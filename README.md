@@ -39,7 +39,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2B.1A — Reservation Core (create/confirm/release/cancel, availability enforcement, concurrency, audit):** ✅ [docs/PHASE-2B1A-RESERVATION-CORE.md](docs/PHASE-2B1A-RESERVATION-CORE.md)
   - **2B.1B — Consumption (releases consume reservations at line level; atomic on_hand + reserved via the ledger; partial/full; idempotent):** ✅ [docs/PHASE-2B1B-CONSUMPTION.md](docs/PHASE-2B1B-CONSUMPTION.md)
   - **2B.1C — Expiry + UX (auto-expiry returns only unconsumed commitments; operational list/detail/create screens, stock drill-down, filtering):** ✅ [docs/PHASE-2B1C-EXPIRY-UX.md](docs/PHASE-2B1C-EXPIRY-UX.md)
-  - **Next:** 2B.2 Returns + Disposition.
+- **2B.2 — Returns + Disposition** (reverse logistics into quarantine; [ADR 0006](docs/adr/0006-returns-disposition.md)):
+  - **2B.2A — Return Intake (CUSTOMER/SUPPLIER/INTERNAL returns received into quarantine via the ledger; lifecycle, idempotency, audit):** ✅ [docs/PHASE-2B2A-RETURN-INTAKE.md](docs/PHASE-2B2A-RETURN-INTAKE.md)
+  - **Next:** 2B.2B Inspection + Disposition.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).
