@@ -11,6 +11,8 @@ import type {
   ImportJobResponse,
   ReservationResponse,
   ReservedBreakdownRow,
+  ReturnResponse,
+  QuarantineBreakdownRow,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -415,6 +417,25 @@ export const api = {
     cancel: (id: string) => request<ReservationResponse>(`/reservations/${id}/cancel`, { method: 'POST' }),
     reservedBreakdown: (productId: string, warehouseId: string, variantId?: string) =>
       request<ReservedBreakdownRow[]>(`/reservations/reserved-breakdown?productId=${productId}&warehouseId=${warehouseId}${variantId ? `&variantId=${variantId}` : ''}`),
+  },
+
+  returns: {
+    list: (filters: Record<string, string> = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+      const qs = p.toString();
+      return request<ReturnResponse[]>(`/returns${qs ? `?${qs}` : ''}`);
+    },
+    get: (id: string) => request<ReturnResponse>(`/returns/${id}`),
+    create: (body: Record<string, unknown>) =>
+      request<ReturnResponse>('/returns', { method: 'POST', body: JSON.stringify(body) }),
+    receive: (id: string, body: Record<string, unknown> = {}) =>
+      request<ReturnResponse>(`/returns/${id}/receive`, { method: 'POST', body: JSON.stringify(body) }),
+    cancel: (id: string) => request<ReturnResponse>(`/returns/${id}/cancel`, { method: 'POST' }),
+    dispose: (id: string, body: Record<string, unknown>) =>
+      request<ReturnResponse>(`/returns/${id}/dispositions`, { method: 'POST', body: JSON.stringify(body) }),
+    quarantineBreakdown: (productId: string, warehouseId: string, variantId?: string) =>
+      request<QuarantineBreakdownRow[]>(`/returns/quarantine-breakdown?productId=${productId}&warehouseId=${warehouseId}${variantId ? `&variantId=${variantId}` : ''}`),
   },
 
   imports: {

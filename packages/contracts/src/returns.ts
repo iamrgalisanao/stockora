@@ -20,6 +20,17 @@ export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 export const DISPOSITION_TYPES = ['RESTOCK', 'DAMAGED', 'RETURN_TO_SUPPLIER', 'DISPOSE'] as const;
 export type DispositionType = (typeof DISPOSITION_TYPES)[number];
 
+/** The active return lines that compose a balance's `quarantined` bucket (stock drill-down). */
+export interface QuarantineBreakdownRow {
+  returnId: string;
+  returnNo: string;
+  lineId: string;
+  type: ReturnType;
+  status: ReturnStatus;
+  remaining: string; // receivedQuantity - disposedQuantity
+  receivedAt: string | null;
+}
+
 export interface ReturnDispositionResponse {
   id: string;
   type: DispositionType;
