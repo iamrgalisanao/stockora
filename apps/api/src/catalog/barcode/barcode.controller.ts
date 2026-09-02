@@ -11,7 +11,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { BarcodeResolutionResult, BarcodeResponse, PERMISSIONS } from '@iw/contracts';
+import { BarcodeResolutionResult, BarcodeResponse, PERMISSIONS, ScanDiagnosis } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/decorators';
 import type { RequestUser } from '../../common/request-user';
 import { BarcodeService } from './barcode.service';
@@ -29,6 +29,13 @@ export class BarcodeController {
   @Get('resolve')
   resolve(@CurrentUser() user: RequestUser, @Query('code') code: string): Promise<BarcodeResolutionResult> {
     return this.resolver.resolve(user.organizationId, (code ?? '').trim());
+  }
+
+  // Privileged diagnostic — explains WHY a code no longer resolves (inactive/archived/etc.).
+  @RequirePermissions(PERMISSIONS.PRODUCT_MANAGE)
+  @Get('resolve/diagnose')
+  diagnose(@CurrentUser() user: RequestUser, @Query('code') code: string): Promise<ScanDiagnosis> {
+    return this.resolver.diagnose(user.organizationId, (code ?? '').trim());
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)

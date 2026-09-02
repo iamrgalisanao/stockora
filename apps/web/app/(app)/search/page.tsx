@@ -57,6 +57,7 @@ export default function SearchPage() {
     <div>
       <div className="topbar">
         <h1 className="h1">Search</h1>
+        <Link href="/scan" className="btn secondary small" style={{ marginTop: 0 }}>Scan a barcode →</Link>
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>

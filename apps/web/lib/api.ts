@@ -11,6 +11,7 @@ import type {
   AuthTokenResponse,
   BalanceResponse,
   BarcodeResolutionResult,
+  ScanDiagnosis,
   BarcodeResponse,
   BarcodeType,
   BrandResponse,
@@ -326,6 +327,7 @@ export const api = {
       request<InventoryPolicyResponse>(`/inventory-policies/${policyId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
   },
   resolve: (code: string) => request<BarcodeResolutionResult>(`/resolve?code=${encodeURIComponent(code)}`),
+  resolveDiagnose: (code: string) => request<ScanDiagnosis>(`/resolve/diagnose?code=${encodeURIComponent(code)}`),
   search: (q: string, limit = 30) => request<SearchResult[]>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 
   supplierAdmin: {
