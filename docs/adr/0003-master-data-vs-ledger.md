@@ -26,6 +26,26 @@ hidden from operational workflows, history valid, not reactivatable via normal U
 - **Product archive rule (Phase 2):** allow INACTIVE with stock/history; **block ARCHIVE while on-hand > 0**
   and while referenced by open reservations/receipts/releases/transfers. Operational eligibility ≠ inventory existence.
 
+## Products, variants & barcodes (2A.1B)
+- **Product & variant are lifecycle-aware** (EntityStatus). A product may be **ACTIVE only if it either
+  has no variants or has ≥ 1 ACTIVE variant** (enforced at product activation, never cascaded from a
+  variant change). Variants deactivate independently.
+- **`ProductBarcode`** (catalog/identity domain, **never** the ledger): belongs to a Product with an
+  **optional** `variantId` (null = product-level barcode for a variant-less product). Invariants:
+  code is **globally unique per org**; many barcodes per identity; **one PRIMARY per (product,
+  variant-or-null)** scope; **archived/inactive barcodes and inactive variants/products do not resolve**;
+  historical movements never depend on the current barcode value. `barcodeType`: STANDARD / INTERNAL
+  (no EAN/UPC/case-pack semantics yet). Concurrency: DB unique `(org, code)`.
+- **`BarcodeResolver` resolves identity, not availability:** `resolve(code, context?) → { type
+  (PRODUCT | PRODUCT_VARIANT | later LOT/SERIAL/LOCATION/DOCUMENT), entityId, productId, variantId,
+  displayCode, status, metadata }`. Inventory availability is a separate query.
+- **Edit guards** — once **any inventory movement exists** for a product, `baseUomId`, `isSerialized`,
+  and `isBatchTracked` are **immutable** (Phase 2A blocks the change outright). Descriptive fields
+  (name, description, category, brand, image, tax) stay editable.
+- **`CanArchiveProduct`** blocks ARCHIVE while any bucket (on_hand/reserved/in_transit/quarantined/
+  damaged) is non-zero **or** an open operational document references the product; distinguishes
+  operational eligibility from inventory existence.
+
 ## Application-command shape (no formal bus)
 Master-data mutations are expressed as identifiable, testable business actions — `CreateProduct`,
 `UpdateProduct`, `ChangeProductStatus`, `AssignBarcode`, `AddVariant`, `UpdateInventoryPolicy` — not raw
