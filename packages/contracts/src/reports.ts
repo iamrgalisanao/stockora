@@ -19,18 +19,7 @@ export interface ValuationReport {
   totalValue: string;
 }
 
-export type StockStatus = 'OUT' | 'LOW' | 'OVERSTOCK' | 'OK';
-
-export interface StockStatusRow {
-  productId: string;
-  sku: string;
-  name: string;
-  onHand: string;
-  available: string;
-  reorderPoint: string;
-  maxStock: string;
-  status: StockStatus;
-}
+// Stock-status is now the policy-driven `ReorderAssessment` list (see ./policies), filterable by state.
 
 export interface DeadStockRow {
   productId: string;

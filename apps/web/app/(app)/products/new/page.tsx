@@ -85,7 +85,7 @@ export default function NewProductPage() {
         <div className="toolbar" style={{ marginTop: 16 }}>
           <button className="btn" disabled={busy} onClick={save}>{busy ? 'Working…' : 'Create product'}</button>
         </div>
-        <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Add variants and barcodes after creating. Warehouse reorder policy is configured separately (coming in 2A.1C).</div>
+        <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Add variants, barcodes, and per-warehouse inventory policies after creating (see the product's tabs).</div>
       </div>
     </div>
   );

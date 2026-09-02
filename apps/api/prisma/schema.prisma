@@ -710,11 +710,7 @@ model Product {
 
   preferredSupplierId String? @map("preferred_supplier_id") @db.Uuid
 
-  // Quantities are decimals (e.g. 1.25 KG).
-  minStock     Decimal @default(0) @map("min_stock") @db.Decimal(18, 4)
-  maxStock     Decimal @default(0) @map("max_stock") @db.Decimal(18, 4)
-  reorderPoint Decimal @default(0) @map("reorder_point") @db.Decimal(18, 4)
-  reorderQty   Decimal @default(0) @map("reorder_qty") @db.Decimal(18, 4)
+  // Reorder thresholds live on InventoryPolicy (per warehouse), not on the product (ADR 0002 §2A.1C).
   leadTimeDays Int     @default(0) @map("lead_time_days")
 
   trackInventory Boolean @default(true) @map("track_inventory")
@@ -750,6 +746,7 @@ model Product {
   adjustmentItems   StockAdjustmentItem[]
   countItems        StockCountItem[]
   barcodes          ProductBarcode[]
+  inventoryPolicies InventoryPolicy[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, categoryId])
@@ -806,6 +803,7 @@ model Warehouse {
   transfersIn   StockTransfer[] @relation("TransferDest")
   adjustments   StockAdjustment[]
   stockCounts   StockCount[]
+  inventoryPolicies InventoryPolicy[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -862,6 +860,7 @@ model Supplier {
   supplierProducts     SupplierProduct[]
   preferredForProducts Product[]         @relation("PreferredSupplier")
   goodsReceipts        GoodsReceipt[]
+  inventoryPolicies    InventoryPolicy[]
 
   @@unique([organizationId, code])
   @@index([organizationId, isActive])
@@ -941,4 +940,32 @@ model ProductBarcode {
   @@unique([organizationId, code])
   @@index([organizationId, productId])
   @@map("product_barcodes")
+}
+
+// Warehouse-level stock-maintenance rules (ADR 0002 §2A.1C). variantId uses the NIL uuid
+// (00000000-0000-0000-0000-000000000000) for product-level policies, matching inventory_balances.
+model InventoryPolicy {
+  id                 String       @id @default(uuid()) @db.Uuid
+  organizationId     String       @map("organization_id") @db.Uuid
+  warehouseId        String       @map("warehouse_id") @db.Uuid
+  productId          String       @map("product_id") @db.Uuid
+  variantId          String       @map("variant_id") @db.Uuid
+  minStock           Decimal      @default(0) @map("min_stock") @db.Decimal(18, 4)
+  maxStock           Decimal?     @map("max_stock") @db.Decimal(18, 4)
+  reorderPoint       Decimal      @default(0) @map("reorder_point") @db.Decimal(18, 4)
+  reorderQuantity    Decimal      @default(0) @map("reorder_quantity") @db.Decimal(18, 4)
+  preferredSupplierId String?     @map("preferred_supplier_id") @db.Uuid
+  status             EntityStatus @default(ACTIVE)
+  statusChangedAt    DateTime?    @map("status_changed_at")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  preferredSupplier Supplier? @relation(fields: [preferredSupplierId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, warehouseId, productId, variantId])
+  @@index([organizationId, productId])
+  @@index([organizationId, warehouseId])
+  @@map("inventory_policies")
 }

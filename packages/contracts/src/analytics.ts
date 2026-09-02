@@ -3,22 +3,7 @@
  * Decimal fields are strings; `estimatedCost` / `inventoryValue` are gated by cost/valuation.view.
  */
 
-export interface ReorderRecommendation {
-  productId: string;
-  sku: string;
-  name: string;
-  uomCode: string;
-  onHand: string;
-  reserved: string;
-  available: string;
-  incoming: string; // expected qty on not-yet-posted goods receipts
-  reorderPoint: string;
-  suggestedQty: string;
-  preferredSupplierId: string | null;
-  preferredSupplierName: string | null;
-  leadTimeDays: number;
-  estimatedCost?: string; // gated by cost.view
-}
+// Reorder recommendations are now warehouse+variant `ReorderAssessment`s (see ./policies).
 
 export interface DashboardSummary {
   totalSkus: number;

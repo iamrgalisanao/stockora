@@ -40,10 +40,6 @@ export class CreateProductDto {
   @IsOptional() @IsString() @MaxLength(60) taxCategory?: string;
   @IsOptional() @IsUUID() preferredSupplierId?: string;
 
-  @IsOptional() @IsNumber(money) @Min(0) minStock?: number;
-  @IsOptional() @IsNumber(money) @Min(0) maxStock?: number;
-  @IsOptional() @IsNumber(money) @Min(0) reorderPoint?: number;
-  @IsOptional() @IsNumber(money) @Min(0) reorderQty?: number;
   @IsOptional() @IsInt() @Min(0) leadTimeDays?: number;
 
   @IsOptional() @IsBoolean() trackInventory?: boolean;
@@ -78,10 +74,6 @@ export class UpdateProductDto {
   @IsOptional() @IsString() @MaxLength(60) taxCategory?: string;
   @IsOptional() @IsUUID() preferredSupplierId?: string;
 
-  @IsOptional() @IsNumber(money) @Min(0) minStock?: number;
-  @IsOptional() @IsNumber(money) @Min(0) maxStock?: number;
-  @IsOptional() @IsNumber(money) @Min(0) reorderPoint?: number;
-  @IsOptional() @IsNumber(money) @Min(0) reorderQty?: number;
   @IsOptional() @IsInt() @Min(0) leadTimeDays?: number;
 
   @IsOptional() @IsBoolean() trackInventory?: boolean;

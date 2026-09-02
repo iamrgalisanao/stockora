@@ -4,55 +4,44 @@ import { PERMISSIONS } from '@iw/contracts';
 import type { DashboardSummary } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import type { RequestUser } from '../common/request-user';
+import { ReorderAssessmentService } from '../inventory-policy/reorder-assessment.service';
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reorder: ReorderAssessmentService,
+  ) {}
 
   async summary(organizationId: string, user: RequestUser): Promise<DashboardSummary> {
     const scope = user.warehouseScope;
     const whIn = scope !== null ? { in: scope } : undefined;
 
-    const [products, balances, totalSkus] = await Promise.all([
-      this.prisma.product.findMany({
-        where: { organizationId, trackInventory: true },
-        select: { id: true, reorderPoint: true },
-      }),
+    const [balances, totalSkus, stockCounts] = await Promise.all([
       this.prisma.inventoryBalance.findMany({
         where: { organizationId, ...(whIn ? { warehouseId: whIn } : {}) },
         select: { productId: true, onHand: true, reserved: true, quarantined: true, inTransit: true, avgCost: true },
       }),
       this.prisma.product.count({ where: { organizationId } }),
+      // Low/out/reorder derive from the authoritative policy-driven assessment.
+      this.reorder.counts(organizationId, user),
     ]);
 
     let onHand = D(0);
     let reserved = D(0);
     let inTransit = D(0);
     let value = D(0);
-    const availByProduct = new Map<string, Prisma.Decimal>();
     for (const b of balances) {
       onHand = onHand.add(b.onHand);
       reserved = reserved.add(b.reserved);
       inTransit = inTransit.add(b.inTransit);
       value = value.add(D(b.onHand).mul(b.avgCost));
-      const avail = D(b.onHand).sub(b.reserved).sub(b.quarantined);
-      availByProduct.set(b.productId, (availByProduct.get(b.productId) ?? D(0)).add(avail));
     }
     const totalAvailable = onHand.sub(reserved); // quarantined summed into per-product; org total approx
 
-    let lowStockCount = 0;
-    let outOfStockCount = 0;
-    let reorderCount = 0;
-    for (const p of products) {
-      const avail = availByProduct.get(p.id) ?? D(0);
-      const rp = D(p.reorderPoint);
-      const belowReorder = rp.gt(0) && avail.lte(rp);
-      if (avail.lte(0)) outOfStockCount += 1;
-      else if (belowReorder) lowStockCount += 1;
-      if (belowReorder) reorderCount += 1;
-    }
+    const { lowStockCount, outOfStockCount, reorderCount } = stockCounts;
 
     const [receipts, releases, transfers, adjustments, counts, recent] = await Promise.all([
       this.prisma.goodsReceipt.count({

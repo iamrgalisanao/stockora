@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type {
-  AuditEntryResponse, BrandResponse, CategoryResponse, EntityStatus, ProductResponse,
+  AuditEntryResponse, BrandResponse, CategoryResponse, EntityStatus, InventoryPolicyResponse,
+  ProductResponse, SupplierResponse, WarehouseResponse,
 } from '@iw/contracts';
 import { api } from '../../../../lib/api';
 import { StatusBadge } from '../../../../components/master-data';
 
-type Tab = 'general' | 'variants' | 'barcodes' | 'history';
+type Tab = 'general' | 'variants' | 'policies' | 'barcodes' | 'history';
 
 export default function ProductEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -52,7 +53,7 @@ export default function ProductEditorPage() {
       </div>
 
       <div className="toolbar" style={{ marginBottom: 12 }}>
-        {(['general', 'variants', 'barcodes', 'history'] as Tab[]).map((t) => (
+        {(['general', 'variants', 'policies', 'barcodes', 'history'] as Tab[]).map((t) => (
           <button key={t} className={`btn ${t === tab ? '' : 'secondary'} small`} style={{ marginTop: 0 }} onClick={() => setTab(t)}>{t}</button>
         ))}
         <span style={{ flex: 1 }} />
@@ -65,6 +66,7 @@ export default function ProductEditorPage() {
 
       {tab === 'general' && <GeneralTab p={p} categories={categories} brands={brands} onSave={(body) => run(() => api.productAdmin.update(id, body))} busy={busy} />}
       {tab === 'variants' && <VariantsTab p={p} onAdd={(body) => run(() => api.productAdmin.addVariant(id, body))} onStatus={(vid, s) => run(() => api.productAdmin.changeVariantStatus(id, vid, s))} busy={busy} />}
+      {tab === 'policies' && <PoliciesTab productId={id} p={p} />}
       {tab === 'barcodes' && <BarcodesTab p={p} onAssign={(body) => run(() => api.productAdmin.assignBarcode(id, body))} onUpdate={(bid, body) => run(() => api.productAdmin.updateBarcode(id, bid, body))} onRemove={(bid) => run(() => api.productAdmin.removeBarcode(id, bid))} busy={busy} />}
       {tab === 'history' && <HistoryTab productId={id} />}
     </div>
@@ -175,6 +177,164 @@ function BarcodesTab({ p, onAssign, onUpdate, onRemove, busy }: { p: ProductResp
         </table>
       </div>
     </div>
+  );
+}
+
+function PoliciesTab({ productId, p }: { productId: string; p: ProductResponse }) {
+  const [rows, setRows] = useState<InventoryPolicyResponse[] | null>(null);
+  const [warehouses, setWarehouses] = useState<WarehouseResponse[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierResponse[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+
+  // Create-form state
+  const [warehouseId, setWarehouseId] = useState('');
+  const [variantId, setVariantId] = useState('');
+  const [minStock, setMinStock] = useState('0');
+  const [reorderPoint, setReorderPoint] = useState('0');
+  const [reorderQuantity, setReorderQuantity] = useState('');
+  const [maxStock, setMaxStock] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+
+  const reload = useCallback(() => {
+    api.productAdmin.policies(productId).then(setRows).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+  }, [productId]);
+  useEffect(() => {
+    reload();
+    api.warehouses().then(setWarehouses).catch(() => {});
+    api.suppliers().then(setSuppliers).catch(() => {});
+  }, [reload]);
+
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true); setError(null);
+    try { await fn(); reload(); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); } finally { setBusy(false); }
+  }
+  function create() {
+    if (!warehouseId) return setError('Select a warehouse');
+    if (!reorderQuantity || Number(reorderQuantity) <= 0) return setError('Reorder quantity must be greater than 0');
+    run(() => api.productAdmin.createPolicy(productId, {
+      warehouseId,
+      variantId: variantId || undefined,
+      minStock: Number(minStock) || 0,
+      reorderPoint: Number(reorderPoint) || 0,
+      reorderQuantity: Number(reorderQuantity),
+      maxStock: maxStock.trim() ? Number(maxStock) : undefined,
+      preferredSupplierId: supplierId || undefined,
+    })).then(() => { setWarehouseId(''); setVariantId(''); setMinStock('0'); setReorderPoint('0'); setReorderQuantity(''); setMaxStock(''); setSupplierId(''); });
+  }
+  const variantLabel = (vid: string | null) => (vid ? p.variants?.find((v) => v.id === vid)?.sku ?? vid : '(product)');
+  const supplierName = (sid: string | null) => (sid ? suppliers.find((s) => s.id === sid)?.companyName ?? sid : '—');
+
+  return (
+    <div className="card">
+      <div className="field-row" style={{ gridTemplateColumns: 'repeat(6, 1fr) auto', alignItems: 'end' }}>
+        <div><label>Warehouse</label>
+          <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+            <option value="">—</option>
+            {warehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+          </select>
+        </div>
+        <div><label>Applies to</label>
+          <select value={variantId} onChange={(e) => setVariantId(e.target.value)}>
+            <option value="">Product</option>
+            {(p.variants ?? []).map((v) => <option key={v.id} value={v.id}>{v.sku}</option>)}
+          </select>
+        </div>
+        <div><label>Min</label><input type="number" min="0" value={minStock} onChange={(e) => setMinStock(e.target.value)} /></div>
+        <div><label>Reorder pt</label><input type="number" min="0" value={reorderPoint} onChange={(e) => setReorderPoint(e.target.value)} /></div>
+        <div><label>Reorder qty</label><input type="number" min="0" value={reorderQuantity} onChange={(e) => setReorderQuantity(e.target.value)} /></div>
+        <div><label>Max</label><input type="number" min="0" value={maxStock} onChange={(e) => setMaxStock(e.target.value)} placeholder="none" /></div>
+        <button className="btn" style={{ marginTop: 0 }} disabled={busy} onClick={create}>Add</button>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <label>Preferred supplier</label>
+        <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} style={{ maxWidth: 280 }}>
+          <option value="">—</option>
+          {suppliers.map((s) => <option key={s.id} value={s.id}>{s.companyName}</option>)}
+        </select>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      <div className="table-wrap" style={{ marginTop: 12 }}>
+        <table className="grid">
+          <thead>
+            <tr>
+              <th>Warehouse</th><th>Applies to</th>
+              <th className="num">Min</th><th className="num">Reorder pt</th><th className="num">Reorder qty</th><th className="num">Max</th>
+              <th>Supplier</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows === null ? <tr><td colSpan={9} className="muted">Loading…</td></tr> : rows.length === 0 ? (
+              <tr><td colSpan={9} className="muted">No policies yet — add one per warehouse to drive reorder intelligence.</td></tr>
+            ) : rows.map((r) => (
+              editId === r.id ? (
+                <PolicyEditRow key={r.id} r={r} busy={busy} warehouseLabel={r.warehouseCode} appliesTo={variantLabel(r.variantId)} suppliers={suppliers}
+                  onCancel={() => setEditId(null)}
+                  onSave={(body) => run(() => api.productAdmin.updatePolicy(r.id, body)).then(() => setEditId(null))} />
+              ) : (
+                <tr key={r.id}>
+                  <td>{r.warehouseCode}</td>
+                  <td>{variantLabel(r.variantId)}</td>
+                  <td className="num">{r.minStock}</td>
+                  <td className="num">{r.reorderPoint}</td>
+                  <td className="num">{r.reorderQuantity}</td>
+                  <td className="num">{r.maxStock ?? '—'}</td>
+                  <td>{supplierName(r.preferredSupplierId)}</td>
+                  <td><StatusBadge status={r.status} /></td>
+                  <td><div className="toolbar">
+                    {r.status !== 'ARCHIVED' && <button className="btn secondary small" style={{ marginTop: 0 }} disabled={busy} onClick={() => setEditId(r.id)}>Edit</button>}
+                    {r.status === 'ACTIVE' && <button className="btn secondary small" style={{ marginTop: 0 }} disabled={busy} onClick={() => run(() => api.productAdmin.changePolicyStatus(r.id, 'INACTIVE'))}>Deactivate</button>}
+                    {r.status === 'INACTIVE' && <button className="btn secondary small" style={{ marginTop: 0 }} disabled={busy} onClick={() => run(() => api.productAdmin.changePolicyStatus(r.id, 'ACTIVE'))}>Activate</button>}
+                    {r.status !== 'ARCHIVED' && <button className="btn secondary small" style={{ marginTop: 0 }} disabled={busy} onClick={() => { if (window.confirm('Archive this policy?')) run(() => api.productAdmin.changePolicyStatus(r.id, 'ARCHIVED')); }}>Archive</button>}
+                  </div></td>
+                </tr>
+              )
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PolicyEditRow({ r, busy, warehouseLabel, appliesTo, suppliers, onCancel, onSave }: {
+  r: InventoryPolicyResponse; busy: boolean; warehouseLabel: string; appliesTo: string; suppliers: SupplierResponse[];
+  onCancel: () => void; onSave: (b: { minStock?: number; maxStock?: number | null; reorderPoint?: number; reorderQuantity?: number; preferredSupplierId?: string | null }) => void;
+}) {
+  const [minStock, setMinStock] = useState(r.minStock);
+  const [reorderPoint, setReorderPoint] = useState(r.reorderPoint);
+  const [reorderQuantity, setReorderQuantity] = useState(r.reorderQuantity);
+  const [maxStock, setMaxStock] = useState(r.maxStock ?? '');
+  const [supplierId, setSupplierId] = useState(r.preferredSupplierId ?? '');
+  return (
+    <tr>
+      <td>{warehouseLabel}</td>
+      <td>{appliesTo}</td>
+      <td className="num"><input type="number" min="0" value={minStock} onChange={(e) => setMinStock(e.target.value)} style={{ width: 80 }} /></td>
+      <td className="num"><input type="number" min="0" value={reorderPoint} onChange={(e) => setReorderPoint(e.target.value)} style={{ width: 80 }} /></td>
+      <td className="num"><input type="number" min="0" value={reorderQuantity} onChange={(e) => setReorderQuantity(e.target.value)} style={{ width: 80 }} /></td>
+      <td className="num"><input type="number" min="0" value={maxStock} onChange={(e) => setMaxStock(e.target.value)} placeholder="none" style={{ width: 80 }} /></td>
+      <td>
+        <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+          <option value="">—</option>
+          {suppliers.map((s) => <option key={s.id} value={s.id}>{s.companyName}</option>)}
+        </select>
+      </td>
+      <td><StatusBadge status={r.status} /></td>
+      <td><div className="toolbar">
+        <button className="btn small" style={{ marginTop: 0 }} disabled={busy} onClick={() => onSave({
+          minStock: Number(minStock) || 0,
+          reorderPoint: Number(reorderPoint) || 0,
+          reorderQuantity: Number(reorderQuantity),
+          maxStock: maxStock.trim() ? Number(maxStock) : null,
+          preferredSupplierId: supplierId || null,
+        })}>Save</button>
+        <button className="btn secondary small" style={{ marginTop: 0 }} disabled={busy} onClick={onCancel}>Cancel</button>
+      </div></td>
+    </tr>
   );
 }
 

@@ -1,15 +1,15 @@
 import { Controller, Get } from '@nestjs/common';
-import { DashboardSummary, PERMISSIONS, ReorderRecommendation } from '@iw/contracts';
+import { DashboardSummary, PERMISSIONS, ReorderAssessment } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
+import { ReorderAssessmentService } from '../inventory-policy/reorder-assessment.service';
 import { DashboardService } from './dashboard.service';
-import { ReorderService } from './reorder.service';
 
 @Controller()
 export class AnalyticsController {
   constructor(
     private readonly dashboard: DashboardService,
-    private readonly reorder: ReorderService,
+    private readonly reorder: ReorderAssessmentService,
   ) {}
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
@@ -20,7 +20,7 @@ export class AnalyticsController {
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
   @Get('reorder/recommendations')
-  reorderRecommendations(@CurrentUser() user: RequestUser): Promise<ReorderRecommendation[]> {
+  reorderRecommendations(@CurrentUser() user: RequestUser): Promise<ReorderAssessment[]> {
     return this.reorder.recommendations(user.organizationId, user);
   }
 }
