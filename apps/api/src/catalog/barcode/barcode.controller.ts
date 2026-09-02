@@ -17,7 +17,9 @@ import type { RequestUser } from '../../common/request-user';
 import { BarcodeService } from './barcode.service';
 import { BarcodeResolverService } from './barcode-resolver.service';
 import { CreateBarcodeDto, UpdateBarcodeDto } from './dto/barcode.dto';
+import { RateLimit } from '../../common/rate-limit';
 
+@RateLimit('sensitive')
 @Controller()
 export class BarcodeController {
   constructor(

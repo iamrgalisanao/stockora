@@ -32,7 +32,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **2A.3B — Export (read-only CSV for products, suppliers, stock balances; round-trips as import templates, CSV-injection safe):** ✅ [docs/PHASE-2A3B-EXPORT.md](docs/PHASE-2A3B-EXPORT.md)
 - **2A.4 — Hardening (release-readiness gate), in progress:**
   - **2A.4A — Sessions & refresh tokens (rotation, reuse detection, revoke/revoke-all, silent web refresh):** ✅ [docs/PHASE-2A4A-SESSIONS.md](docs/PHASE-2A4A-SESSIONS.md)
-  - **Next:** 2A.4B API hardening (rate limiting, payload limits, security headers, error shape, health/readiness).
+  - **2A.4B — API hardening (tiered rate limiting, 1 MB payload cap, security headers/CORS allowlist, consistent error shape + structured logging, health/readiness):** ✅ [docs/PHASE-2A4B-API-HARDENING.md](docs/PHASE-2A4B-API-HARDENING.md)
+  - **Next:** 2A.4C release engineering (CI + dependency audit, backup/recovery runbook).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

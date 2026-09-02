@@ -1,10 +1,13 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { validateEnv } from './config/env';
 import { PrismaModule } from './prisma/prisma.module';
 import { RequestContextModule } from './common/request-context.module';
 import { RequestContextInterceptor } from './common/request-context';
+import { RateLimitGuard } from './common/rate-limit';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { SecurityHeadersMiddleware } from './common/security-headers.middleware';
 import { AuditModule } from './audit/audit.module';
 import { RbacModule } from './rbac/rbac.module';
 import { AuthModule } from './auth/auth.module';
@@ -69,6 +72,10 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
   ],
   controllers: [HealthController],
   providers: [
+    // Consistent error shape + structured logging for every failure.
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    // Rate limit before doing any auth work, so unauthenticated floods are cheap to reject.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     // Deny-by-default: authenticate first, then authorize. Order matters.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
@@ -76,4 +83,8 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(SecurityHeadersMiddleware).forRoutes('*');
+  }
+}

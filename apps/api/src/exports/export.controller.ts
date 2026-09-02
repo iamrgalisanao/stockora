@@ -3,9 +3,11 @@ import { PERMISSIONS } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { ExportService } from './export.service';
+import { RateLimit } from '../common/rate-limit';
 
 const TEMPLATE_TYPES = ['products', 'suppliers', 'opening-inventory'];
 
+@RateLimit('sensitive')
 @Controller('exports')
 export class ExportController {
   constructor(private readonly exports: ExportService) {}
