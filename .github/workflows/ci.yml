@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: iw_user
+          POSTGRES_PASSWORD: iw_password
+          POSTGRES_DB: inventory_warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U iw_user -d inventory_warehouse"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://iw_user:iw_password@localhost:5432/inventory_warehouse
+      JWT_SECRET: ci-test-secret-please-change-in-prod
+      CORS_ORIGIN: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build contracts
+        run: npm run build -w @iw/contracts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Prisma generate + migrate
+        working-directory: apps/api
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+
+      - name: Unit tests
+        run: npm test -w @iw/api
+
+      - name: E2E tests
+        run: npm run test:e2e -w @iw/api
+
+      - name: Build
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Advisory: surface known high/critical CVEs. Does not block the merge on its own.
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
+        continue-on-error: true
