@@ -57,9 +57,12 @@ export class ReceivingService {
     user: RequestUser,
     dto: CreateReceiptDto,
   ): Promise<ReceiptResponse> {
-    await this.warehouses.assertAccess(organizationId, user, dto.warehouseId);
+    await this.warehouses.assertSelectableForCreate(organizationId, user, dto.warehouseId);
     if (dto.supplierId) await this.ensureSupplier(organizationId, dto.supplierId);
     await this.ensureProducts(organizationId, dto.items);
+    for (const i of dto.items) {
+      if (i.locationId) await this.warehouses.assertLocationSelectable(organizationId, dto.warehouseId, i.locationId);
+    }
 
     const receiptNumber = await this.nextReceiptNumber(organizationId);
     const receipt = await this.prisma.goodsReceipt.create({

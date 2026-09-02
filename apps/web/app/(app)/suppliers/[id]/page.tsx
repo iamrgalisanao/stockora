@@ -88,8 +88,9 @@ function GeneralTab({ s, onSave, busy }: { s: SupplierResponse; onSave: (b: Reco
       <div style={{ marginTop: 10 }}><label>Address</label><input value={f.address} onChange={(e) => set('address', e.target.value)} /></div>
       <div style={{ marginTop: 10 }}><label>Notes</label><input value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div>
       <div className="toolbar" style={{ marginTop: 12 }}>
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" style={{ width: 'auto' }} checked={f.isPreferred} onChange={(e) => set('isPreferred', e.target.checked)} /> Preferred vendor</label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" style={{ width: 'auto' }} checked={f.isPreferred} onChange={(e) => set('isPreferred', e.target.checked)} /> Preferred Vendor (strategic classification)</label>
       </div>
+      <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>A descriptive label only — the operational source of truth for reordering is the preferred supplier set on each product or warehouse policy.</div>
       <div className="toolbar" style={{ marginTop: 14 }}>
         <button className="btn" disabled={busy} onClick={() => onSave({
           companyName: f.companyName,

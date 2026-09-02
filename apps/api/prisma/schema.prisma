@@ -770,9 +770,14 @@ enum WarehouseType {
   VIRTUAL
 }
 
-enum WarehouseStatus {
-  ACTIVE
-  INACTIVE
+enum LocationUsage {
+  STORAGE
+  RECEIVING
+  STAGING
+  QUARANTINE
+  DAMAGED
+  DISPATCH
+  OTHER
 }
 
 model Warehouse {
@@ -785,7 +790,10 @@ model Warehouse {
   managerId       String?         @map("manager_id") @db.Uuid
   phone           String?
   email           String?
-  status          WarehouseStatus @default(ACTIVE)
+  status          EntityStatus    @default(ACTIVE)
+  statusChangedAt DateTime?       @map("status_changed_at")
+  archivedAt      DateTime?       @map("archived_at")
+  archivedById    String?         @map("archived_by_id") @db.Uuid
   isDefault       Boolean         @default(false) @map("is_default")
   allowReceiving  Boolean         @default(true) @map("allow_receiving")
   allowDispatch   Boolean         @default(true) @map("allow_dispatch")
@@ -817,11 +825,13 @@ model WarehouseLocation {
   parentId        String?  @map("parent_id") @db.Uuid
   code            String
   name            String?
-  // Free-form level: ZONE / AISLE / RACK / SHELF / BIN / AREA (not enforced as enum).
+  // Free-form structural level: ZONE / AISLE / RACK / SHELF / BIN / AREA (not a fixed sequence).
   type            String?
+  // Operational eligibility classification (validation metadata, not a balance bucket).
+  usage           LocationUsage @default(STORAGE)
   isPickable      Boolean  @default(true) @map("is_pickable")
-  isReceivingArea Boolean  @default(false) @map("is_receiving_area")
-  isActive        Boolean  @default(true) @map("is_active")
+  status          EntityStatus @default(ACTIVE)
+  statusChangedAt DateTime?    @map("status_changed_at")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

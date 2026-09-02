@@ -7,8 +7,9 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
-import { WAREHOUSE_TYPES, WarehouseType } from '@iw/contracts';
+import { LOCATION_USAGES, LocationUsage, WAREHOUSE_TYPES, WarehouseType } from '@iw/contracts';
 
 export class CreateWarehouseDto {
   @IsString()
@@ -41,7 +42,6 @@ export class UpdateWarehouseDto {
   @IsOptional() @IsBoolean() isDefault?: boolean;
   @IsOptional() @IsBoolean() allowReceiving?: boolean;
   @IsOptional() @IsBoolean() allowDispatch?: boolean;
-  @IsOptional() @IsIn(['ACTIVE', 'INACTIVE']) status?: 'ACTIVE' | 'INACTIVE';
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 
@@ -53,16 +53,22 @@ export class CreateLocationDto {
 
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsString() @MaxLength(24) type?: string;
+  @IsOptional() @IsIn(LOCATION_USAGES) usage?: LocationUsage;
   @IsOptional() @IsUUID() parentId?: string;
   @IsOptional() @IsBoolean() isPickable?: boolean;
-  @IsOptional() @IsBoolean() isReceivingArea?: boolean;
 }
 
 export class UpdateLocationDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsString() @MaxLength(24) type?: string;
-  @IsOptional() @IsUUID() parentId?: string | null;
+  @IsOptional() @IsIn(LOCATION_USAGES) usage?: LocationUsage;
   @IsOptional() @IsBoolean() isPickable?: boolean;
-  @IsOptional() @IsBoolean() isReceivingArea?: boolean;
-  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+/** Reparent a location within the SAME warehouse (null = make it a root). */
+export class MoveLocationDto {
+  @ValidateIf((o) => o.parentId !== null)
+  @IsOptional()
+  @IsUUID()
+  parentId?: string | null;
 }

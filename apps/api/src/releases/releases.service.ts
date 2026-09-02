@@ -60,7 +60,7 @@ export class ReleasesService {
     user: RequestUser,
     dto: CreateReleaseDto,
   ): Promise<ReleaseResponse> {
-    await this.warehouses.assertAccess(organizationId, user, dto.warehouseId);
+    await this.warehouses.assertSelectableForCreate(organizationId, user, dto.warehouseId);
     await this.ensureProducts(organizationId, dto.items);
 
     const releaseNumber = await this.nextNumber(organizationId);
