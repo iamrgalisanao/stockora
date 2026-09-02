@@ -9,6 +9,8 @@ import type {
   SearchResult,
   ImportPreviewResponse,
   ImportJobResponse,
+  ReservationResponse,
+  ReservedBreakdownRow,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -396,6 +398,23 @@ export const api = {
 
   exports: {
     download: (path: string, filename: string) => downloadCsv(path, filename),
+  },
+
+  reservations: {
+    list: (filters: Record<string, string> = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+      const qs = p.toString();
+      return request<ReservationResponse[]>(`/reservations${qs ? `?${qs}` : ''}`);
+    },
+    get: (id: string) => request<ReservationResponse>(`/reservations/${id}`),
+    create: (body: Record<string, unknown>) =>
+      request<ReservationResponse>('/reservations', { method: 'POST', body: JSON.stringify(body) }),
+    confirm: (id: string) => request<ReservationResponse>(`/reservations/${id}/confirm`, { method: 'POST' }),
+    release: (id: string) => request<ReservationResponse>(`/reservations/${id}/release`, { method: 'POST' }),
+    cancel: (id: string) => request<ReservationResponse>(`/reservations/${id}/cancel`, { method: 'POST' }),
+    reservedBreakdown: (productId: string, warehouseId: string, variantId?: string) =>
+      request<ReservedBreakdownRow[]>(`/reservations/reserved-breakdown?productId=${productId}&warehouseId=${warehouseId}${variantId ? `&variantId=${variantId}` : ''}`),
   },
 
   imports: {
