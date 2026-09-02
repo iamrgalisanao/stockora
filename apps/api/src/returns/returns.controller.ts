@@ -3,7 +3,7 @@ import { ReturnResponse, ReturnStatus, ReturnType, PERMISSIONS } from '@iw/contr
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { ReturnsService } from './returns.service';
-import { CreateReturnDto, ReceiveReturnDto } from './dto/return.dto';
+import { CreateReturnDto, CreateDispositionDto, ReceiveReturnDto } from './dto/return.dto';
 
 @Controller('returns')
 export class ReturnsController {
@@ -47,5 +47,17 @@ export class ReturnsController {
   @Post(':id/cancel')
   cancel(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<ReturnResponse> {
     return this.returns.cancel(user.organizationId, user, id);
+  }
+
+  // Floor permission is return.inspect; the service additionally requires return.dispose for the
+  // outbound/irreversible outcomes (RETURN_TO_SUPPLIER / DISPOSE).
+  @RequirePermissions(PERMISSIONS.RETURN_INSPECT)
+  @Post(':id/dispositions')
+  dispose(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateDispositionDto,
+  ): Promise<ReturnResponse> {
+    return this.returns.dispose(user.organizationId, user, id, dto);
   }
 }
