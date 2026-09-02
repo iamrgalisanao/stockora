@@ -42,6 +42,7 @@ describe('Inventory ledger + balance engine (e2e)', () => {
     user = {
       userId: randomUUID(),
       email: 'ledger@test',
+      name: 'Ledger Tester',
       membershipId: randomUUID(),
       organizationId: orgId,
       roleKey: 'administrator',

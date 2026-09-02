@@ -53,7 +53,7 @@ describe('Suppliers — lifecycle, catalog & archive guard (e2e)', () => {
     const inactive = await http().get('/api/suppliers?status=INACTIVE').set(bearer()).expect(200);
     expect(inactive.body.map((x: { id: string }) => x.id)).toContain(s.id);
 
-    const audit = (await http().get(`/api/audit?entityType=supplier&entityId=${s.id}`).set(bearer()).expect(200)).body;
+    const audit = (await http().get(`/api/audit?entityType=supplier&entityId=${s.id}`).set(bearer()).expect(200)).body.entries;
     const actions = audit.map((a: { action: string }) => a.action);
     expect(actions).toContain('supplier.created');
     expect(actions).toContain('supplier.status_changed');
@@ -78,7 +78,7 @@ describe('Suppliers — lifecycle, catalog & archive guard (e2e)', () => {
     const deact = (await http().post(`/api/suppliers/${s.id}/products/${link.id}/status`).set(bearer()).send({ status: 'INACTIVE' }).expect(201)).body;
     expect(deact.status).toBe('INACTIVE');
 
-    const audit = (await http().get(`/api/audit?entityType=supplier_product&entityId=${link.id}`).set(bearer()).expect(200)).body;
+    const audit = (await http().get(`/api/audit?entityType=supplier_product&entityId=${link.id}`).set(bearer()).expect(200)).body.entries;
     const actions = audit.map((a: { action: string }) => a.action);
     expect(actions).toEqual(expect.arrayContaining(['supplier_product.linked', 'supplier_product.updated', 'supplier_product.status_changed']));
   });

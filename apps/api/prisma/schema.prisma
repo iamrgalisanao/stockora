@@ -136,23 +136,46 @@ model RolePermission {
 // Audit (append-only)
 // ---------------------------------------------------------------------------
 
+enum AuditSource {
+  USER
+  SYSTEM
+  IMPORT
+  API
+  INTEGRATION
+  SCHEDULED_JOB
+}
+
 model AuditLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String?  @map("organization_id") @db.Uuid
-  userId         String?  @map("user_id") @db.Uuid
-  action         String
-  entityType     String?  @map("entity_type")
-  entityId       String?  @map("entity_id")
-  oldValue       Json?    @map("old_value")
-  newValue       Json?    @map("new_value")
-  reference      String?
-  ipAddress      String?  @map("ip_address")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id               String      @id @default(uuid()) @db.Uuid
+  organizationId   String?     @map("organization_id") @db.Uuid
+  userId           String?     @map("user_id") @db.Uuid
+  // Snapshot of who acted, captured at write time so history survives user rename/deletion.
+  actorDisplayName String?     @map("actor_display_name")
+  // What KIND of initiator caused the event (human, system job, import, …).
+  source           AuditSource @default(USER)
+  action           String
+  entityType       String?     @map("entity_type")
+  entityId         String?     @map("entity_id")
+  // Snapshot of the entity's human identity (sku/code) for display without a join.
+  entityDisplay    String?     @map("entity_display")
+  // Optional "where" — lets warehouse-scoped users see their warehouses' history.
+  warehouseId      String?     @map("warehouse_id") @db.Uuid
+  // Groups every record produced by one logical operation/request.
+  correlationId    String?     @map("correlation_id") @db.Uuid
+  oldValue         Json?       @map("old_value")
+  newValue         Json?       @map("new_value")
+  reference        String?
+  ipAddress        String?     @map("ip_address")
+  createdAt        DateTime    @default(now()) @map("created_at")
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
-  @@index([organizationId, entityType, entityId])
   @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId, createdAt])
+  @@index([organizationId, userId, createdAt])
+  @@index([organizationId, action, createdAt])
+  @@index([organizationId, warehouseId, createdAt])
+  @@index([correlationId])
   @@map("audit_logs")
 }
 

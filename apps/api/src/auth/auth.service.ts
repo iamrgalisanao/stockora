@@ -211,6 +211,7 @@ export class AuthService {
     return {
       userId: p.userId,
       email: p.email,
+      name: p.name,
       membershipId: p.membershipId,
       organizationId: p.organizationId,
       roleKey: p.roleKey,

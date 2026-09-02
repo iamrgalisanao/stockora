@@ -98,7 +98,8 @@ export class WarehousesService {
       });
       await this.audit.record({
         organizationId, userId: user.userId, action: 'warehouse.created',
-        entityType: 'warehouse', entityId: w.id, newValue: { code: w.code, name: w.name },
+        entityType: 'warehouse', entityId: w.id, entityDisplay: w.code, warehouseId: w.id,
+        newValue: { code: w.code, name: w.name },
       });
       return this.toResponse(w);
     } catch (e) {
@@ -142,7 +143,8 @@ export class WarehousesService {
     });
     await this.audit.record({
       organizationId, userId: user.userId, action: 'warehouse.updated',
-      entityType: 'warehouse', entityId: id, newValue: { name: w.name },
+      entityType: 'warehouse', entityId: id, entityDisplay: w.code, warehouseId: id,
+      newValue: { name: w.name },
     });
     return this.toResponse(w);
   }
@@ -166,7 +168,8 @@ export class WarehousesService {
     });
     await this.audit.record({
       organizationId, userId: user.userId, action: 'warehouse.status_changed',
-      entityType: 'warehouse', entityId: id, oldValue: { status: existing.status }, newValue: { status },
+      entityType: 'warehouse', entityId: id, entityDisplay: existing.code, warehouseId: id,
+      oldValue: { status: existing.status }, newValue: { status },
     });
     return this.toResponse(w);
   }
@@ -252,7 +255,8 @@ export class WarehousesService {
       });
       await this.audit.record({
         organizationId, userId: user.userId, action: 'location.created',
-        entityType: 'location', entityId: l.id, newValue: { warehouseId, code: l.code, parentId: l.parentId },
+        entityType: 'location', entityId: l.id, entityDisplay: l.code, warehouseId,
+        newValue: { warehouseId, code: l.code, parentId: l.parentId },
       });
       return this.toLocationResponse(l);
     } catch (e) {
@@ -284,7 +288,7 @@ export class WarehousesService {
     });
     await this.audit.record({
       organizationId, userId: user.userId, action: 'location.updated',
-      entityType: 'location', entityId: locationId,
+      entityType: 'location', entityId: locationId, entityDisplay: l.code, warehouseId,
     });
     return this.toLocationResponse(l);
   }
@@ -315,7 +319,7 @@ export class WarehousesService {
     });
     await this.audit.record({
       organizationId, userId: user.userId, action: 'location.moved',
-      entityType: 'location', entityId: locationId,
+      entityType: 'location', entityId: locationId, entityDisplay: existing.code, warehouseId,
       oldValue: { parentId: existing.parentId }, newValue: { parentId: newParentId },
     });
     return this.toLocationResponse(l);
@@ -341,7 +345,8 @@ export class WarehousesService {
     });
     await this.audit.record({
       organizationId, userId: user.userId, action: 'location.status_changed',
-      entityType: 'location', entityId: locationId, oldValue: { status: existing.status }, newValue: { status },
+      entityType: 'location', entityId: locationId, entityDisplay: existing.code, warehouseId,
+      oldValue: { status: existing.status }, newValue: { status },
     });
     return this.toLocationResponse(l);
   }

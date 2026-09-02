@@ -18,6 +18,7 @@ describe('ReorderAssessmentService (unit)', () => {
   const user = (opts: Partial<RequestUser> = {}): RequestUser => ({
     userId: 'u1',
     email: 'u@x.test',
+    name: 'Tester',
     membershipId: 'm1',
     organizationId: ORG,
     roleKey: 'admin',

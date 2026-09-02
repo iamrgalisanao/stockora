@@ -8,6 +8,7 @@ import type {
 } from '@iw/contracts';
 import { api } from '../../../../lib/api';
 import { StatusBadge } from '../../../../components/master-data';
+import { auditActor, auditSummary } from '../../../../lib/audit-format';
 
 type Tab = 'general' | 'variants' | 'policies' | 'barcodes' | 'history';
 
@@ -340,14 +341,14 @@ function PolicyEditRow({ r, busy, warehouseLabel, appliesTo, suppliers, onCancel
 
 function HistoryTab({ productId }: { productId: string }) {
   const [rows, setRows] = useState<AuditEntryResponse[] | null>(null);
-  useEffect(() => { api.audit('product', productId).then(setRows).catch(() => setRows([])); }, [productId]);
+  useEffect(() => { api.audit.forEntity('product', productId).then(setRows).catch(() => setRows([])); }, [productId]);
   return (
     <div className="card">
       {rows === null ? <div className="muted">Loading…</div> : rows.length === 0 ? <div className="muted">No history.</div> : (
         <div className="table-wrap">
           <table className="grid">
-            <thead><tr><th>Action</th><th>When</th></tr></thead>
-            <tbody>{rows.map((r) => <tr key={r.id}><td>{r.action.replace(/[._]/g, ' ')}</td><td>{new Date(r.createdAt).toLocaleString()}</td></tr>)}</tbody>
+            <thead><tr><th>Event</th><th>By</th><th>When</th></tr></thead>
+            <tbody>{rows.map((r) => <tr key={r.id}><td>{auditSummary(r)}</td><td>{auditActor(r)}</td><td>{new Date(r.occurredAt).toLocaleString()}</td></tr>)}</tbody>
           </table>
         </div>
       )}

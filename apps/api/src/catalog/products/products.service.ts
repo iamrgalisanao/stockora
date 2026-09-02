@@ -81,7 +81,7 @@ export class ProductsService {
       if (this.isUnique(e)) throw new ConflictException(`SKU "${dto.sku}" already exists`);
       throw e;
     }
-    await this.audit.record({ organizationId, userId: user.userId, action: 'product.created', entityType: 'product', entityId: created.id, newValue: { sku: created.sku, name: created.name } });
+    await this.audit.record({ organizationId, userId: user.userId, action: 'product.created', entityType: 'product', entityId: created.id, entityDisplay: created.sku, newValue: { sku: created.sku, name: created.name } });
     return this.toResponse(created, this.canViewCost(user));
   }
 
@@ -119,7 +119,7 @@ export class ProductsService {
       if (this.isUnique(e)) throw new ConflictException(`SKU "${dto.sku}" already exists`);
       throw e;
     }
-    await this.audit.record({ organizationId, userId: user.userId, action: 'product.updated', entityType: 'product', entityId: id, newValue: { sku: updated.sku } });
+    await this.audit.record({ organizationId, userId: user.userId, action: 'product.updated', entityType: 'product', entityId: id, entityDisplay: updated.sku, newValue: { sku: updated.sku } });
     return this.toResponse(updated, this.canViewCost(user));
   }
 
@@ -137,7 +137,7 @@ export class ProductsService {
       if (!check.canArchive) throw new BadRequestException(`Cannot archive: ${check.reasons.join('; ')}`);
     }
     await this.prisma.product.update({ where: { id }, data: statusChangeData(status, user.userId) });
-    await this.audit.record({ organizationId, userId: user.userId, action: 'product.status_changed', entityType: 'product', entityId: id, oldValue: { status: existing.status }, newValue: { status } });
+    await this.audit.record({ organizationId, userId: user.userId, action: 'product.status_changed', entityType: 'product', entityId: id, entityDisplay: existing.sku, oldValue: { status: existing.status }, newValue: { status } });
     return this.get(organizationId, user, id);
   }
 
@@ -183,7 +183,7 @@ export class ProductsService {
       if (!product.hasVariants) await tx.product.update({ where: { id: productId }, data: { hasVariants: true } });
       return v;
     });
-    await this.audit.record({ organizationId, userId: user.userId, action: 'variant.created', entityType: 'variant', entityId: variant.id, newValue: { sku: variant.sku } });
+    await this.audit.record({ organizationId, userId: user.userId, action: 'variant.created', entityType: 'variant', entityId: variant.id, entityDisplay: variant.sku, newValue: { sku: variant.sku } });
     return this.variantResponse(variant, this.canViewCost(user));
   }
 
@@ -218,7 +218,7 @@ export class ProductsService {
       }
     }
     const updated = await this.prisma.productVariant.update({ where: { id: variantId }, data: statusChangeData(status, user.userId) });
-    await this.audit.record({ organizationId, userId: user.userId, action: 'variant.status_changed', entityType: 'variant', entityId: variantId, oldValue: { status: variant.status }, newValue: { status } });
+    await this.audit.record({ organizationId, userId: user.userId, action: 'variant.status_changed', entityType: 'variant', entityId: variantId, entityDisplay: variant.sku, oldValue: { status: variant.status }, newValue: { status } });
     return this.variantResponse(updated, this.canViewCost(user));
   }
 

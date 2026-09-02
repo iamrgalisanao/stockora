@@ -49,7 +49,7 @@ describe('Catalog lifecycle + audit (e2e)', () => {
     expect(activeList.map((b: { id: string }) => b.id)).not.toContain(brand.id);
 
     // Entity audit history captured the create + status changes.
-    const audit = (await http().get(`/api/audit?entityType=brand&entityId=${brand.id}`).set(bearer()).expect(200)).body;
+    const audit = (await http().get(`/api/audit?entityType=brand&entityId=${brand.id}`).set(bearer()).expect(200)).body.entries;
     const actions = audit.map((a: { action: string }) => a.action);
     expect(actions).toEqual(expect.arrayContaining(['brand.created', 'brand.status_changed']));
   });

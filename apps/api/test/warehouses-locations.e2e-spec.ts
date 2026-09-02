@@ -180,10 +180,10 @@ describe('Warehouses & locations — lifecycle + hierarchy (e2e)', () => {
     await http().post(`/api/warehouses/${w.id}/locations/${loc.id}/move`).set(bearer()).send({ parentId: sib.id }).expect(201);
     await http().post(`/api/warehouses/${w.id}/status`).set(bearer()).send({ status: 'INACTIVE' }).expect(201);
 
-    const whAudit = (await http().get(`/api/audit?entityType=warehouse&entityId=${w.id}`).set(bearer()).expect(200)).body
+    const whAudit = (await http().get(`/api/audit?entityType=warehouse&entityId=${w.id}`).set(bearer()).expect(200)).body.entries
       .map((a: { action: string }) => a.action);
     expect(whAudit).toEqual(expect.arrayContaining(['warehouse.created', 'warehouse.status_changed']));
-    const locAudit = (await http().get(`/api/audit?entityType=location&entityId=${loc.id}`).set(bearer()).expect(200)).body
+    const locAudit = (await http().get(`/api/audit?entityType=location&entityId=${loc.id}`).set(bearer()).expect(200)).body.entries
       .map((a: { action: string }) => a.action);
     expect(locAudit).toEqual(expect.arrayContaining(['location.created', 'location.moved']));
   });
