@@ -6,6 +6,7 @@ import type {
   AuditEntryResponse,
   AuditPage,
   AuditFilter,
+  SearchResult,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -325,6 +326,7 @@ export const api = {
       request<InventoryPolicyResponse>(`/inventory-policies/${policyId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
   },
   resolve: (code: string) => request<BarcodeResolutionResult>(`/resolve?code=${encodeURIComponent(code)}`),
+  search: (q: string, limit = 30) => request<SearchResult[]>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 
   supplierAdmin: {
     get: (id: string) => request<SupplierResponse>(`/suppliers/${id}`),
