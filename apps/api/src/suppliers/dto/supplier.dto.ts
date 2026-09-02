@@ -45,7 +45,6 @@ export class UpdateSupplierDto {
   @IsOptional() @IsInt() @Min(0) leadTimeDays?: number;
   @IsOptional() @IsInt() @Min(1) @Max(5) rating?: number;
   @IsOptional() @IsBoolean() isPreferred?: boolean;
-  @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 
@@ -64,5 +63,4 @@ export class UpdateSupplierProductDto {
   @IsOptional() @IsInt() @Min(0) leadTimeDays?: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) minOrderQty?: number;
   @IsOptional() @IsBoolean() isPreferred?: boolean;
-  @IsOptional() @IsBoolean() isActive?: boolean;
 }

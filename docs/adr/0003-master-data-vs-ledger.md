@@ -46,6 +46,18 @@ hidden from operational workflows, history valid, not reactivatable via normal U
   damaged) is non-zero **or** an open operational document references the product; distinguishes
   operational eligibility from inventory existence.
 
+## Suppliers & supplier catalog (2A.1D)
+- **`Supplier` and `SupplierProduct` are lifecycle-aware** (EntityStatus), replacing the legacy
+  `isActive` boolean — same ACTIVE ⇄ INACTIVE, ACTIVE/INACTIVE → ARCHIVED rules, all mutations audited.
+- **`CanArchiveSupplier`** blocks ARCHIVE while the supplier is still relied upon: it is the
+  `preferredSupplierId` on any non-archived Product **or** InventoryPolicy, or is referenced by an
+  **open goods receipt** (DRAFT/RECEIVING/FOR_INSPECTION/PARTIALLY_RECEIVED). Deactivation is always
+  allowed. `isPreferred` on the supplier is a descriptive "preferred vendor" tag, distinct from the
+  authoritative `preferredSupplierId` links on products/policies.
+- **`SupplierProduct`** is the supplier's catalog offer (supplier SKU, negotiated cost, MOQ, lead time);
+  cost is gated by `cost.view`. One offer per `(org, supplier, product)`. Archiving a link is
+  reversible via status; it is not a hard delete (history-preserving).
+
 ## Application-command shape (no formal bus)
 Master-data mutations are expressed as identifiable, testable business actions — `CreateProduct`,
 `UpdateProduct`, `ChangeProductStatus`, `AssignBarcode`, `AddVariant`, `UpdateInventoryPolicy` — not raw
