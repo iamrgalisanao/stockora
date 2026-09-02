@@ -40,6 +40,24 @@ Invariants: [adr/0001-inventory-invariants.md](adr/0001-inventory-invariants.md)
 - No bulk onboarding → 2A #3.
 - Audit captured but not browsable → 2A #4.
 
+## 2A locked breakdown (accepted 2026-09-02)
+- **2A.1A — Catalog foundations:** Categories, Brands, Units + conversions; the `EntityStatus`
+  lifecycle model; reusable master-data UI patterns (table, search/filter, status badge, create/edit
+  form, archive action, entity audit-history drawer) + a generic per-entity audit endpoint.
+- **2A.1B — Products + variants:** application commands; `ProductBarcode` (multi-barcode per variant);
+  `BarcodeResolver` v1 (PRODUCT, PRODUCT_VARIANT); archive/status rules (block archive while on-hand > 0).
+- **2A.1C — Inventory policies:** warehouse-level `InventoryPolicy` (min/max/reorder point/qty,
+  preferred supplier); reorder engine + dashboard switch from product-level fields to policy.
+- **2A.1D — Suppliers + supplier-products.**  · **2A.1E — Warehouses + hierarchical locations.**
+- **2A.1F — Audit explorer** (org-wide search over the same audit data).
+- **2A.2 — Global search + barcode scanner UX** (BarcodeResolver v2+: LOT, SERIAL, LOCATION, DOCUMENT).
+- **2A.3 — Import/export framework.**  · **2A.4 — Production/security hardening.**
+
+**2A.1 Definition of Done:** a new org can build its sellable catalog (category → units → brand →
+product → variants → barcode → warehouse reorder policy), edit/deactivate/reactivate/archive it,
+search/filter it, and see who changed it — entirely through the web app, respecting RBAC, org/warehouse
+boundaries, audit, validation, uniqueness, concurrency, and referential integrity. No seeds/API/dev help.
+
 ## Delivery method
 Continue **thin vertical slices** (backend + UI + tests, verified, committed) per backlog item, each
 respecting the invariants (ADR 0001). Build order follows the table above.
