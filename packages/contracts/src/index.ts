@@ -15,3 +15,4 @@ export * from './counts';
 export * from './analytics';
 export * from './reports';
 export * from './policies';
+export * from './search';

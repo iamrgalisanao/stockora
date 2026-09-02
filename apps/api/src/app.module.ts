@@ -26,6 +26,7 @@ import { AdjustmentsModule } from './adjustments/adjustments.module';
 import { CountsModule } from './counts/counts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ReportsModule } from './reports/reports.module';
+import { SearchModule } from './search/search.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -60,6 +61,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     CountsModule,
     AnalyticsModule,
     ReportsModule,
+    SearchModule,
   ],
   controllers: [HealthController],
   providers: [
