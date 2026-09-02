@@ -115,6 +115,7 @@ table.grid td.num, table.grid th.num { text-align: right; font-variant-numeric: 
 .badge.ok { color: var(--accent-2); border-color: var(--accent-2); }
 .badge.warn { color: #e6b800; border-color: #e6b800; }
 .badge.muted { color: var(--muted); }
+.badge.danger { color: var(--danger); border-color: var(--danger); }
 
 .btn { display: inline-block; width: auto; margin: 0; padding: 8px 14px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; text-decoration: none; font-size: 13px; }
 .btn.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }

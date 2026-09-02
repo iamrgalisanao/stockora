@@ -20,6 +20,7 @@ import { ReleasesModule } from './releases/releases.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { AdjustmentsModule } from './adjustments/adjustments.module';
 import { CountsModule } from './counts/counts.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -49,6 +50,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     TransfersModule,
     AdjustmentsModule,
     CountsModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController],
   providers: [

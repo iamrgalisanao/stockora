@@ -9,6 +9,8 @@ import type {
   CountListItem,
   CountResponse,
   CountType,
+  DashboardSummary,
+  ReorderRecommendation,
   LoginRequest,
   OrganizationResponse,
   ProductResponse,
@@ -199,4 +201,7 @@ export const api = {
     post: (id: string) => request<CountResponse>(`/counts/${id}/post`, { method: 'POST' }),
     cancel: (id: string) => request<CountResponse>(`/counts/${id}/cancel`, { method: 'POST' }),
   },
+
+  dashboard: () => request<DashboardSummary>('/dashboard/summary'),
+  reorder: () => request<ReorderRecommendation[]>('/reorder/recommendations'),
 };
