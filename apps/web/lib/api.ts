@@ -138,6 +138,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Fetch a CSV with auth (a plain <a> can't send the bearer token) and save it via a Blob URL. */
+async function downloadCsv(path: string, filename: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/api${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    let message = `Export failed (${res.status})`;
+    try { const b = await res.json(); if (b?.message) message = Array.isArray(b.message) ? b.message.join(', ') : b.message; } catch { /* keep */ }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   register: (body: RegisterOrganizationRequest) =>
     request<AuthTokenResponse>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
@@ -331,6 +348,10 @@ export const api = {
   resolve: (code: string) => request<BarcodeResolutionResult>(`/resolve?code=${encodeURIComponent(code)}`),
   resolveDiagnose: (code: string) => request<ScanDiagnosis>(`/resolve/diagnose?code=${encodeURIComponent(code)}`),
   search: (q: string, limit = 30) => request<SearchResult[]>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  exports: {
+    download: (path: string, filename: string) => downloadCsv(path, filename),
+  },
 
   imports: {
     preview: (type: 'products' | 'suppliers' | 'opening-inventory', fileName: string, content: string) =>
