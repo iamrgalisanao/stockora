@@ -32,6 +32,7 @@ import { ReportsModule } from './reports/reports.module';
 import { SearchModule } from './search/search.module';
 import { ImportModule } from './imports/import.module';
 import { ExportModule } from './exports/export.module';
+import { ReservationsModule } from './reservations/reservations.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -69,6 +70,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     SearchModule,
     ImportModule,
     ExportModule,
+    ReservationsModule,
   ],
   controllers: [HealthController],
   providers: [

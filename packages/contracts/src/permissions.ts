@@ -43,6 +43,14 @@ export const PERMISSIONS = {
   IMPORT_OPENING_INVENTORY: 'import.opening_inventory',
   EXPORT_CATALOG: 'export.catalog',
   EXPORT_INVENTORY: 'export.inventory',
+
+  // Reservations (2B.1) — commitments against availability
+  RESERVATION_VIEW: 'reservation.view',
+  RESERVATION_CREATE: 'reservation.create',
+  RESERVATION_CONFIRM: 'reservation.confirm',
+  RESERVATION_RELEASE: 'reservation.release',
+  RESERVATION_CANCEL: 'reservation.cancel',
+  RESERVATION_OVERRIDE: 'reservation.override',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -82,4 +90,10 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { code: PERMISSIONS.IMPORT_OPENING_INVENTORY, description: 'Bulk-import opening inventory balances' },
   { code: PERMISSIONS.EXPORT_CATALOG, description: 'Export catalog data (products, suppliers)' },
   { code: PERMISSIONS.EXPORT_INVENTORY, description: 'Export inventory data (stock balances)' },
+  { code: PERMISSIONS.RESERVATION_VIEW, description: 'View stock reservations' },
+  { code: PERMISSIONS.RESERVATION_CREATE, description: 'Create (draft) stock reservations' },
+  { code: PERMISSIONS.RESERVATION_CONFIRM, description: 'Confirm reservations (commit against availability)' },
+  { code: PERMISSIONS.RESERVATION_RELEASE, description: 'Release reserved stock back to availability' },
+  { code: PERMISSIONS.RESERVATION_CANCEL, description: 'Cancel reservations' },
+  { code: PERMISSIONS.RESERVATION_OVERRIDE, description: 'Override reservation limits (oversubscription)' },
 ];
