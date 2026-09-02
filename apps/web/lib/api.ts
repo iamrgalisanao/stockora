@@ -6,6 +6,9 @@ import type {
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
+  CountListItem,
+  CountResponse,
+  CountType,
   LoginRequest,
   OrganizationResponse,
   ProductResponse,
@@ -182,5 +185,18 @@ export const api = {
       request<AdjustmentReasonResponse>('/adjustment-reasons', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: { name?: string; isActive?: boolean }) =>
       request<AdjustmentReasonResponse>(`/adjustment-reasons/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  },
+
+  counts: {
+    list: () => request<CountListItem[]>('/counts'),
+    get: (id: string) => request<CountResponse>(`/counts/${id}`),
+    create: (body: { warehouseId: string; type?: CountType; isBlind?: boolean; notes?: string }) =>
+      request<CountResponse>('/counts', { method: 'POST', body: JSON.stringify(body) }),
+    enter: (id: string, items: Array<{ itemId: string; countedQty: number }>) =>
+      request<CountResponse>(`/counts/${id}/entries`, { method: 'POST', body: JSON.stringify({ items }) }),
+    submit: (id: string) => request<CountResponse>(`/counts/${id}/submit`, { method: 'POST' }),
+    approve: (id: string) => request<CountResponse>(`/counts/${id}/approve`, { method: 'POST' }),
+    post: (id: string) => request<CountResponse>(`/counts/${id}/post`, { method: 'POST' }),
+    cancel: (id: string) => request<CountResponse>(`/counts/${id}/cancel`, { method: 'POST' }),
   },
 };

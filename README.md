@@ -14,7 +14,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **Phase 11 — Releases (approval workflow, backend + web UI):** ✅ [docs/PHASE-11-RELEASES.md](docs/PHASE-11-RELEASES.md)
 - **Phase 12 — Transfers (approval + in-transit, backend + web UI):** ✅ [docs/PHASE-12-TRANSFERS.md](docs/PHASE-12-TRANSFERS.md)
 - **Phase 14 — Stock Adjustments (approval + high-value 2nd approver, backend + web UI):** ✅ [docs/PHASE-14-ADJUSTMENTS.md](docs/PHASE-14-ADJUSTMENTS.md)
-- **Next:** Physical Count, then the reorder engine, dashboard, and reports.
+- **Phase 15 — Physical Count (snapshot → count → variance → post, backend + web UI):** ✅ [docs/PHASE-15-PHYSICAL-COUNT.md](docs/PHASE-15-PHYSICAL-COUNT.md)
+- **Next:** reorder engine, dashboard KPIs, and reports (management-visibility layer).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

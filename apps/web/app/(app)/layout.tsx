@@ -16,7 +16,13 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/transfers', label: 'Transfers' },
     ],
   },
-  { group: 'Control', links: [{ href: '/adjustments', label: 'Adjustments' }] },
+  {
+    group: 'Control',
+    links: [
+      { href: '/adjustments', label: 'Adjustments' },
+      { href: '/counts', label: 'Physical Counts' },
+    ],
+  },
   { group: 'Administration', links: [{ href: '/admin/adjustment-reasons', label: 'Adjustment Reasons' }] },
 ];
 

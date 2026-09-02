@@ -10,3 +10,4 @@ export * from './receiving';
 export * from './releases';
 export * from './transfers';
 export * from './adjustments';
+export * from './counts';
