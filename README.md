@@ -44,7 +44,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2B.2B — Inspection + Disposition (split quarantined stock across RESTOCK / DAMAGED / RETURN_TO_SUPPLIER / DISPOSE, each an immutable ledger posting; concurrency-safe, idempotent, deterministic status roll-up):** ✅ [docs/PHASE-2B2B-INSPECTION-DISPOSITION.md](docs/PHASE-2B2B-INSPECTION-DISPOSITION.md)
   - **2B.2C — UX + Visibility (return list/detail/create + disposition drawer with permission gating; quarantine drill-down on Stock Overview reconciling to the ledger balance):** ✅ [docs/PHASE-2B2C-RETURNS-UX.md](docs/PHASE-2B2C-RETURNS-UX.md)
 - **✅ Phase 2B — Stock Commitment & Reverse Logistics complete.**
-- **Next:** Phase 2C — Traceability (Batch / Lot Tracking, then Expiry / FEFO).
+- **2C.1 — Batch / Lot Tracking** (lot becomes inventory grain; [ADR 0007](docs/adr/0007-batch-lot-tracking.md)):
+  - **2C.1A — Lot Core + Receiving (InventoryLot entity + uniqueness/lifecycle/immutability; balance & ledger lot grain; posting-time enforcement; opening + receiving lot capture; legacy backfill; lot query API):** ✅ [docs/PHASE-2C1A-LOT-CORE.md](docs/PHASE-2C1A-LOT-CORE.md)
+  - **Next:** 2C.1B Lot Propagation (releases/transfers/adjustments/counts/returns become lot-aware).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

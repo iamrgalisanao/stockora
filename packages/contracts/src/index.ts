@@ -19,3 +19,4 @@ export * from './search';
 export * from './imports';
 export * from './reservations';
 export * from './returns';
+export * from './lots';

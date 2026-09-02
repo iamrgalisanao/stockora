@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsDateString,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -18,6 +19,11 @@ export class OpeningBalanceLineDto {
   @IsNumber({ maxDecimalPlaces: 4 }) @IsPositive() quantity!: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) unitCost?: number;
   @IsOptional() @IsUUID() locationId?: string;
+  // Lot fields (ADR 0007) — required for batch-tracked products, rejected otherwise.
+  @IsOptional() @IsString() @MaxLength(60) lotNumber?: string;
+  @IsOptional() @IsDateString() manufacturedAt?: string;
+  @IsOptional() @IsDateString() expiryDate?: string;
+  @IsOptional() @IsUUID() supplierId?: string;
 }
 
 export class OpeningBalanceDto {
