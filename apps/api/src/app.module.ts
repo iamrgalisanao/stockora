@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { validateEnv } from './config/env';
 import { PrismaModule } from './prisma/prisma.module';
+import { RequestContextModule } from './common/request-context.module';
+import { RequestContextInterceptor } from './common/request-context';
 import { AuditModule } from './audit/audit.module';
 import { RbacModule } from './rbac/rbac.module';
 import { AuthModule } from './auth/auth.module';
@@ -36,6 +38,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
       envFilePath: ['.env'],
     }),
     PrismaModule,
+    RequestContextModule,
     AuditModule,
     RbacModule,
     AuthModule,
@@ -63,6 +66,8 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     // Deny-by-default: authenticate first, then authorize. Order matters.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    // Runs after the guards, so req.user is available to snapshot into the request context.
+    { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
   ],
 })
 export class AppModule {}

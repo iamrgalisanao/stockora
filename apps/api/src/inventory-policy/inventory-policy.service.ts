@@ -107,6 +107,8 @@ export class InventoryPolicyService {
         action: 'inventory_policy.created',
         entityType: 'inventory_policy',
         entityId: row.id,
+        entityDisplay: `${row.product.sku} @ ${row.warehouse.code}`,
+        warehouseId: row.warehouseId,
         newValue: this.snapshot(row),
       });
       return this.toResponse(row);
@@ -163,6 +165,8 @@ export class InventoryPolicyService {
       action: 'inventory_policy.updated',
       entityType: 'inventory_policy',
       entityId: policyId,
+      entityDisplay: `${row.product.sku} @ ${row.warehouse.code}`,
+      warehouseId: row.warehouseId,
       oldValue: this.snapshot(existing),
       newValue: this.snapshot(row),
     });
@@ -194,6 +198,8 @@ export class InventoryPolicyService {
       action: 'inventory_policy.status_changed',
       entityType: 'inventory_policy',
       entityId: policyId,
+      entityDisplay: `${existing.product.sku} @ ${existing.warehouse.code}`,
+      warehouseId: existing.warehouseId,
       oldValue: { status: existing.status },
       newValue: { status },
     });

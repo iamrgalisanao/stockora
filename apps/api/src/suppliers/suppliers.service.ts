@@ -79,6 +79,7 @@ export class SuppliersService {
         action: 'supplier.created',
         entityType: 'supplier',
         entityId: s.id,
+        entityDisplay: s.code,
         newValue: { code: s.code, companyName: s.companyName },
       });
       return this.toResponse(s);
@@ -117,6 +118,7 @@ export class SuppliersService {
       action: 'supplier.updated',
       entityType: 'supplier',
       entityId: id,
+      entityDisplay: existing.code,
       oldValue: { companyName: existing.companyName },
       newValue: { companyName: s.companyName },
     });
@@ -145,6 +147,7 @@ export class SuppliersService {
       action: 'supplier.status_changed',
       entityType: 'supplier',
       entityId: id,
+      entityDisplay: existing.code,
       oldValue: { status: existing.status },
       newValue: { status },
     });

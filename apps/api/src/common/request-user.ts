@@ -7,6 +7,7 @@ import type { PermissionCode } from '@iw/contracts';
 export interface RequestUser {
   userId: string;
   email: string;
+  name: string;
   membershipId: string;
   organizationId: string;
   roleKey: string;

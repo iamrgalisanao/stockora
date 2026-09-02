@@ -10,6 +10,7 @@ import type {
 import { LOCATION_USAGES, LOCATION_TYPE_SUGGESTIONS, WAREHOUSE_TYPES } from '@iw/contracts';
 import { api } from '../../../../lib/api';
 import { StatusBadge } from '../../../../components/master-data';
+import { auditActor, auditSummary } from '../../../../lib/audit-format';
 
 type Tab = 'general' | 'locations' | 'policies' | 'history';
 
@@ -287,14 +288,14 @@ function PoliciesTab({ warehouseId }: { warehouseId: string }) {
 
 function HistoryTab({ warehouseId }: { warehouseId: string }) {
   const [rows, setRows] = useState<AuditEntryResponse[] | null>(null);
-  useEffect(() => { api.audit('warehouse', warehouseId).then(setRows).catch(() => setRows([])); }, [warehouseId]);
+  useEffect(() => { api.audit.forEntity('warehouse', warehouseId).then(setRows).catch(() => setRows([])); }, [warehouseId]);
   return (
     <div className="card">
       {rows === null ? <div className="muted">Loading…</div> : rows.length === 0 ? <div className="muted">No history.</div> : (
         <div className="table-wrap">
           <table className="grid">
-            <thead><tr><th>Action</th><th>When</th></tr></thead>
-            <tbody>{rows.map((r) => <tr key={r.id}><td>{r.action.replace(/[._]/g, ' ')}</td><td>{new Date(r.createdAt).toLocaleString()}</td></tr>)}</tbody>
+            <thead><tr><th>Event</th><th>By</th><th>When</th></tr></thead>
+            <tbody>{rows.map((r) => <tr key={r.id}><td>{auditSummary(r)}</td><td>{auditActor(r)}</td><td>{new Date(r.occurredAt).toLocaleString()}</td></tr>)}</tbody>
           </table>
         </div>
       )}

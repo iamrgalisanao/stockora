@@ -134,7 +134,7 @@ describe('Inventory Policies — invariants (e2e)', () => {
       .send({ warehouseId: whMain, reorderPoint: 5, reorderQuantity: 5 }).expect(201)).body.id;
     await http().patch(`/api/inventory-policies/${policyId}`).set(bearer()).send({ reorderPoint: 8 }).expect(200);
 
-    const audit = (await http().get(`/api/audit?entityType=inventory_policy&entityId=${policyId}`).set(bearer()).expect(200)).body;
+    const audit = (await http().get(`/api/audit?entityType=inventory_policy&entityId=${policyId}`).set(bearer()).expect(200)).body.entries;
     const actions = audit.map((a: { action: string }) => a.action);
     expect(actions).toContain('inventory_policy.created');
     expect(actions).toContain('inventory_policy.updated');

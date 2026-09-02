@@ -87,6 +87,8 @@ export class ReceivingService {
       action: 'goods_receipt.created',
       entityType: 'goods_receipt',
       entityId: receipt.id,
+      entityDisplay: receiptNumber,
+      warehouseId: dto.warehouseId,
       newValue: { receiptNumber, warehouseId: dto.warehouseId, lines: dto.items.length },
     });
     return this.get(organizationId, user, receipt.id);

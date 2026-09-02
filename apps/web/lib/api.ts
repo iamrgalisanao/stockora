@@ -4,6 +4,8 @@ import type {
   AdjustmentReasonResponse,
   AdjustmentResponse,
   AuditEntryResponse,
+  AuditPage,
+  AuditFilter,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -264,8 +266,18 @@ export const api = {
       request<UnitConversionResponse>('/unit-conversions', { method: 'POST', body: JSON.stringify(body) }),
     deleteConversion: (id: string) => request<void>(`/unit-conversions/${id}`, { method: 'DELETE' }),
   },
-  audit: (entityType: string, entityId: string) =>
-    request<AuditEntryResponse[]>(`/audit?entityType=${entityType}&entityId=${entityId}`),
+  audit: {
+    search: (filter: AuditFilter = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(filter)) if (v !== undefined && v !== '') p.set(k, String(v));
+      const qs = p.toString();
+      return request<AuditPage>(`/audit${qs ? `?${qs}` : ''}`);
+    },
+    forEntity: (entityType: string, entityId: string) =>
+      request<AuditPage>(`/audit?entityType=${entityType}&entityId=${entityId}`).then((r) => r.entries),
+    correlation: (correlationId: string) =>
+      request<AuditEntryResponse[]>(`/audit/correlation/${correlationId}`),
+  },
 
   productAdmin: {
     get: (id: string) => request<ProductResponse>(`/products/${id}`),

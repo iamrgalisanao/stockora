@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AuditEntryResponse, EntityStatus } from '@iw/contracts';
 import { api } from '../lib/api';
+import { auditActor, auditSummary } from '../lib/audit-format';
 
 export function StatusBadge({ status }: { status: EntityStatus }) {
   const cls = status === 'ACTIVE' ? 'ok' : status === 'INACTIVE' ? 'warn' : 'muted';
@@ -23,7 +24,7 @@ export function AuditDrawer({
 }) {
   const [rows, setRows] = useState<AuditEntryResponse[] | null>(null);
   useEffect(() => {
-    api.audit(entityType, entityId).then(setRows).catch(() => setRows([]));
+    api.audit.forEntity(entityType, entityId).then(setRows).catch(() => setRows([]));
   }, [entityType, entityId]);
 
   return (
@@ -41,8 +42,8 @@ export function AuditDrawer({
           <div>
             {rows.map((r) => (
               <div className="kv" key={r.id}>
-                <div className="v">{r.action.replace(/[._]/g, ' ')}</div>
-                <div className="k">{new Date(r.createdAt).toLocaleString()}</div>
+                <div className="v">{auditSummary(r)}</div>
+                <div className="k">{auditActor(r)} · {new Date(r.occurredAt).toLocaleString()}</div>
               </div>
             ))}
           </div>

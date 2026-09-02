@@ -15,6 +15,7 @@ function contextWithUser(user: RequestUser | undefined): ExecutionContext {
 const baseUser: RequestUser = {
   userId: 'u1',
   email: 'a@b.c',
+  name: 'Tester',
   membershipId: 'm1',
   organizationId: 'o1',
   roleKey: 'warehouse_staff',
