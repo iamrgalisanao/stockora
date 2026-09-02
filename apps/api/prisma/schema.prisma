@@ -601,14 +601,24 @@ model NumberSequence {
 // Product Master (Phase 03)
 // ---------------------------------------------------------------------------
 
+// 3-state master-data lifecycle (ADR 0003). Replaces the old isActive boolean.
+enum EntityStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
 model ProductCategory {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  parentId       String?  @map("parent_id") @db.Uuid
-  name           String
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  parentId        String?      @map("parent_id") @db.Uuid
+  name            String
+  status          EntityStatus @default(ACTIVE)
+  statusChangedAt DateTime?    @map("status_changed_at")
+  archivedAt      DateTime?    @map("archived_at")
+  archivedById    String?      @map("archived_by_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
   parent   ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children ProductCategory[] @relation("CategoryTree")
@@ -620,13 +630,16 @@ model ProductCategory {
 }
 
 model Brand {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String
-  manufacturer   String?
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  name            String
+  manufacturer    String?
+  status          EntityStatus @default(ACTIVE)
+  statusChangedAt DateTime?    @map("status_changed_at")
+  archivedAt      DateTime?    @map("archived_at")
+  archivedById    String?      @map("archived_by_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
   products Product[]
 
@@ -635,15 +648,18 @@ model Brand {
 }
 
 model UnitOfMeasure {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  code           String
-  name           String
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  code            String
+  name            String
   // Decimal places allowed for quantities in this unit (0 = whole units only).
-  precision      Int      @default(0)
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  precision       Int          @default(0)
+  status          EntityStatus @default(ACTIVE)
+  statusChangedAt DateTime?    @map("status_changed_at")
+  archivedAt      DateTime?    @map("archived_at")
+  archivedById    String?      @map("archived_by_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
   conversionsFrom  UnitConversion[] @relation("ConversionFrom")
   conversionsTo    UnitConversion[] @relation("ConversionTo")

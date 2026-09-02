@@ -3,9 +3,15 @@ import type {
   AdjustmentListItem,
   AdjustmentReasonResponse,
   AdjustmentResponse,
+  AuditEntryResponse,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
+  BrandResponse,
+  CategoryResponse,
+  EntityStatus,
+  UnitConversionResponse,
+  UnitResponse,
   CountListItem,
   CountResponse,
   CountType,
@@ -113,6 +119,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new Error(message);
   }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }
 
@@ -216,4 +225,46 @@ export const api = {
       request<StockStatusRow[]>(`/reports/stock-status${status ? `?status=${status}` : ''}`),
     deadStock: (days = 90) => request<DeadStockRow[]>(`/reports/dead-stock?days=${days}`),
   },
+
+  categories: {
+    list: (q?: string, status?: EntityStatus) => request<CategoryResponse[]>(`/categories${catalogQs(q, status)}`),
+    create: (body: { name: string; parentId?: string }) =>
+      request<CategoryResponse>('/categories', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: { name?: string; parentId?: string | null }) =>
+      request<CategoryResponse>(`/categories/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changeStatus: (id: string, status: EntityStatus) =>
+      request<CategoryResponse>(`/categories/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  },
+  brands: {
+    list: (q?: string, status?: EntityStatus) => request<BrandResponse[]>(`/brands${catalogQs(q, status)}`),
+    create: (body: { name: string; manufacturer?: string }) =>
+      request<BrandResponse>('/brands', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: { name?: string; manufacturer?: string }) =>
+      request<BrandResponse>(`/brands/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changeStatus: (id: string, status: EntityStatus) =>
+      request<BrandResponse>(`/brands/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  },
+  units: {
+    list: (q?: string, status?: EntityStatus) => request<UnitResponse[]>(`/units${catalogQs(q, status)}`),
+    create: (body: { code: string; name: string; precision?: number }) =>
+      request<UnitResponse>('/units', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: { name?: string; precision?: number }) =>
+      request<UnitResponse>(`/units/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changeStatus: (id: string, status: EntityStatus) =>
+      request<UnitResponse>(`/units/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    conversions: () => request<UnitConversionResponse[]>('/unit-conversions'),
+    createConversion: (body: { fromUomId: string; toUomId: string; factor: number }) =>
+      request<UnitConversionResponse>('/unit-conversions', { method: 'POST', body: JSON.stringify(body) }),
+    deleteConversion: (id: string) => request<void>(`/unit-conversions/${id}`, { method: 'DELETE' }),
+  },
+  audit: (entityType: string, entityId: string) =>
+    request<AuditEntryResponse[]>(`/audit?entityType=${entityType}&entityId=${entityId}`),
 };
+
+function catalogQs(q?: string, status?: EntityStatus): string {
+  const p = new URLSearchParams();
+  if (q) p.set('q', q);
+  if (status) p.set('status', status);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}

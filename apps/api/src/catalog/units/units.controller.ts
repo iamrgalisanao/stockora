@@ -9,10 +9,12 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { PERMISSIONS, UnitConversionResponse, UnitResponse } from '@iw/contracts';
+import { EntityStatus, PERMISSIONS, UnitConversionResponse, UnitResponse } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/decorators';
 import type { RequestUser } from '../../common/request-user';
+import { ChangeStatusDto } from '../../common/dto/change-status.dto';
 import { UnitsService } from './units.service';
 import { CreateUnitDto, UpdateUnitDto } from './dto/unit.dto';
 import { CreateUnitConversionDto } from './dto/conversion.dto';
@@ -23,14 +25,18 @@ export class UnitsController {
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
   @Get('units')
-  list(@CurrentUser() user: RequestUser): Promise<UnitResponse[]> {
-    return this.units.list(user.organizationId);
+  list(
+    @CurrentUser() user: RequestUser,
+    @Query('q') q?: string,
+    @Query('status') status?: EntityStatus,
+  ): Promise<UnitResponse[]> {
+    return this.units.list(user.organizationId, { q, status });
   }
 
   @RequirePermissions(PERMISSIONS.PRODUCT_MANAGE)
   @Post('units')
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateUnitDto): Promise<UnitResponse> {
-    return this.units.create(user.organizationId, dto);
+    return this.units.create(user.organizationId, dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.PRODUCT_MANAGE)
@@ -40,7 +46,17 @@ export class UnitsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUnitDto,
   ): Promise<UnitResponse> {
-    return this.units.update(user.organizationId, id, dto);
+    return this.units.update(user.organizationId, id, dto, user);
+  }
+
+  @RequirePermissions(PERMISSIONS.PRODUCT_MANAGE)
+  @Post('units/:id/status')
+  changeStatus(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangeStatusDto,
+  ): Promise<UnitResponse> {
+    return this.units.changeStatus(user.organizationId, id, dto.status, user);
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { AuditEntryResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface AuditEntry {
@@ -41,5 +42,33 @@ export class AuditService {
     } catch (err) {
       this.logger.error(`Failed to write audit log for action "${entry.action}"`, err as Error);
     }
+  }
+
+  /** Reads audit entries for the org, optionally scoped to one entity. Newest first. */
+  async list(
+    organizationId: string,
+    filter: { entityType?: string; entityId?: string; action?: string; limit?: number },
+  ): Promise<AuditEntryResponse[]> {
+    const rows = await this.prisma.auditLog.findMany({
+      where: {
+        organizationId,
+        ...(filter.entityType ? { entityType: filter.entityType } : {}),
+        ...(filter.entityId ? { entityId: filter.entityId } : {}),
+        ...(filter.action ? { action: filter.action } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(filter.limit ?? 50, 200),
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      userId: r.userId,
+      oldValue: r.oldValue ?? null,
+      newValue: r.newValue ?? null,
+      reference: r.reference,
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 }

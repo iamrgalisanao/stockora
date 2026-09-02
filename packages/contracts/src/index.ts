@@ -1,6 +1,7 @@
 export * from './permissions';
 export * from './roles';
 export * from './dto';
+export * from './audit';
 export * from './users';
 export * from './catalog';
 export * from './suppliers';

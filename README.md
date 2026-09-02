@@ -17,7 +17,10 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **Phase 15 — Physical Count (snapshot → count → variance → post, backend + web UI):** ✅ [docs/PHASE-15-PHYSICAL-COUNT.md](docs/PHASE-15-PHYSICAL-COUNT.md)
 - **Phase 17+19 — Reorder engine & Dashboard KPIs (backend + web UI):** ✅ [docs/PHASE-17-19-REORDER-DASHBOARD.md](docs/PHASE-17-19-REORDER-DASHBOARD.md)
 - **Phase 20 — Reports (valuation, stock status, dead stock; backend + web UI):** ✅ [docs/PHASE-20-REPORTS.md](docs/PHASE-20-REPORTS.md)
-- **Next:** master-data management UIs, reservations, batch/serial, notifications, or AI — open.
+
+**Phase 2** ([plan](docs/PHASE-2-PLAN.md) · [ADRs](docs/adr/)): operational readiness → advanced inventory.
+- **2A.1A — Catalog foundations (lifecycle status, master-data UI, audit drawer):** ✅ [docs/PHASE-2A1A-CATALOG-FOUNDATIONS.md](docs/PHASE-2A1A-CATALOG-FOUNDATIONS.md)
+- **Next:** 2A.1B Products + variants (+ barcode resolver), 2A.1C inventory policies, 2A.1D suppliers, 2A.1E warehouses/locations, 2A.1F audit explorer.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

@@ -4,12 +4,15 @@
  * holds the `cost.view` permission.
  */
 
+export const ENTITY_STATUSES = ['ACTIVE', 'INACTIVE', 'ARCHIVED'] as const;
+export type EntityStatus = (typeof ENTITY_STATUSES)[number];
+
 export interface UnitResponse {
   id: string;
   code: string;
   name: string;
   precision: number;
-  isActive: boolean;
+  status: EntityStatus;
 }
 
 export interface UnitConversionResponse {
@@ -25,14 +28,14 @@ export interface BrandResponse {
   id: string;
   name: string;
   manufacturer: string | null;
-  isActive: boolean;
+  status: EntityStatus;
 }
 
 export interface CategoryResponse {
   id: string;
   parentId: string | null;
   name: string;
-  isActive: boolean;
+  status: EntityStatus;
 }
 
 export interface VariantResponse {

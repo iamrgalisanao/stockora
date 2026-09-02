@@ -31,8 +31,4 @@ export class UpdateCategoryDto {
   @ValidateIf((o: UpdateCategoryDto) => o.parentId !== null)
   @IsUUID()
   parentId?: string | null;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
 }

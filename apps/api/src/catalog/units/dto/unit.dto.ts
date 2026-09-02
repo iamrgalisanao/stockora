@@ -40,8 +40,4 @@ export class UpdateUnitDto {
   @Min(0)
   @Max(6)
   precision?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
 }

@@ -23,8 +23,4 @@ export class UpdateBrandDto {
   @IsString()
   @MaxLength(120)
   manufacturer?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
 }

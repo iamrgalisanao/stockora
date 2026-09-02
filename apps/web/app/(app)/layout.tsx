@@ -32,7 +32,15 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/analytics/dead-stock', label: 'Dead Stock' },
     ],
   },
-  { group: 'Administration', links: [{ href: '/admin/adjustment-reasons', label: 'Adjustment Reasons' }] },
+  {
+    group: 'Administration',
+    links: [
+      { href: '/admin/categories', label: 'Categories' },
+      { href: '/admin/brands', label: 'Brands' },
+      { href: '/admin/units', label: 'Units' },
+      { href: '/admin/adjustment-reasons', label: 'Adjustment Reasons' },
+    ],
+  },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {
