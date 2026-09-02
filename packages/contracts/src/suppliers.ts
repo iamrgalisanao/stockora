@@ -1,6 +1,9 @@
 /**
- * Supplier contracts (Phase 05). `cost` on supplier-product offers is gated by `cost.view`.
+ * Supplier contracts (Phase 05; lifecycle in 2A.1D). `cost` on supplier-product
+ * offers is gated by `cost.view`. `status` is the master-data lifecycle (ADR 0003).
  */
+
+import type { EntityStatus } from './catalog';
 
 export interface SupplierResponse {
   id: string;
@@ -15,7 +18,7 @@ export interface SupplierResponse {
   leadTimeDays: number;
   rating: number | null;
   isPreferred: boolean;
-  isActive: boolean;
+  status: EntityStatus;
   notes: string | null;
   createdAt: string;
 }
@@ -32,5 +35,5 @@ export interface SupplierProductResponse {
   leadTimeDays: number | null;
   minOrderQty: string | null;
   isPreferred: boolean;
-  isActive: boolean;
+  status: EntityStatus;
 }

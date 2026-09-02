@@ -36,6 +36,7 @@ import type {
   ReleaseListItem,
   ReleaseResponse,
   SupplierResponse,
+  SupplierProductResponse,
   TransferListItem,
   TransferResponse,
   WarehouseResponse,
@@ -139,7 +140,7 @@ export const api = {
 
   products: (status?: EntityStatus) => request<ProductResponse[]>(`/products${status ? `?status=${status}` : ''}`),
   warehouses: () => request<WarehouseResponse[]>('/warehouses'),
-  suppliers: () => request<SupplierResponse[]>('/suppliers'),
+  suppliers: (q?: string, status?: EntityStatus) => request<SupplierResponse[]>(`/suppliers${catalogQs(q, status)}`),
   balances: (params?: { warehouseId?: string; productId?: string }) => {
     const q = new URLSearchParams();
     if (params?.warehouseId) q.set('warehouseId', params.warehouseId);
@@ -310,6 +311,28 @@ export const api = {
       request<InventoryPolicyResponse>(`/inventory-policies/${policyId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
   },
   resolve: (code: string) => request<BarcodeResolutionResult>(`/resolve?code=${encodeURIComponent(code)}`),
+
+  supplierAdmin: {
+    get: (id: string) => request<SupplierResponse>(`/suppliers/${id}`),
+    create: (body: Record<string, unknown>) =>
+      request<SupplierResponse>('/suppliers', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Record<string, unknown>) =>
+      request<SupplierResponse>(`/suppliers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changeStatus: (id: string, status: EntityStatus) =>
+      request<SupplierResponse>(`/suppliers/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    products: (id: string) => request<SupplierProductResponse[]>(`/suppliers/${id}/products`),
+    addProduct: (
+      id: string,
+      body: { productId: string; supplierSku?: string; cost?: number; leadTimeDays?: number; minOrderQty?: number; isPreferred?: boolean },
+    ) => request<SupplierProductResponse>(`/suppliers/${id}/products`, { method: 'POST', body: JSON.stringify(body) }),
+    updateProduct: (
+      id: string,
+      supplierProductId: string,
+      body: { supplierSku?: string; cost?: number; leadTimeDays?: number; minOrderQty?: number; isPreferred?: boolean },
+    ) => request<SupplierProductResponse>(`/suppliers/${id}/products/${supplierProductId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changeProductStatus: (id: string, supplierProductId: string, status: EntityStatus) =>
+      request<SupplierProductResponse>(`/suppliers/${id}/products/${supplierProductId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  },
 };
 
 function catalogQs(q?: string, status?: EntityStatus): string {

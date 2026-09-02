@@ -4,11 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EntityStatus } from '@prisma/client';
 import { PERMISSIONS } from '@iw/contracts';
 import type { SupplierProductResponse, SupplierResponse } from '@iw/contracts';
 import type { Supplier, SupplierProduct } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
+import { assertStatusTransition, statusChangeData } from '../common/status-lifecycle';
 import {
   CreateSupplierDto,
   CreateSupplierProductDto,
@@ -16,25 +19,42 @@ import {
   UpdateSupplierProductDto,
 } from './dto/supplier.dto';
 
+const OPEN_RECEIPT_STATUSES = ['DRAFT', 'RECEIVING', 'FOR_INSPECTION', 'PARTIALLY_RECEIVED'] as const;
+
 @Injectable()
 export class SuppliersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
-  async list(organizationId: string): Promise<SupplierResponse[]> {
+  async list(
+    organizationId: string,
+    filter: { q?: string; status?: EntityStatus },
+  ): Promise<SupplierResponse[]> {
     const rows = await this.prisma.supplier.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.q
+          ? {
+              OR: [
+                { code: { contains: filter.q, mode: 'insensitive' } },
+                { companyName: { contains: filter.q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
       orderBy: { companyName: 'asc' },
     });
     return rows.map((s) => this.toResponse(s));
   }
 
   async get(organizationId: string, id: string): Promise<SupplierResponse> {
-    const s = await this.prisma.supplier.findFirst({ where: { id, organizationId } });
-    if (!s) throw new NotFoundException('Supplier not found');
-    return this.toResponse(s);
+    return this.toResponse(await this.ensureExists(organizationId, id));
   }
 
-  async create(organizationId: string, dto: CreateSupplierDto): Promise<SupplierResponse> {
+  async create(organizationId: string, dto: CreateSupplierDto, user: RequestUser): Promise<SupplierResponse> {
     try {
       const s = await this.prisma.supplier.create({
         data: {
@@ -53,6 +73,14 @@ export class SuppliersService {
           notes: dto.notes ?? null,
         },
       });
+      await this.audit.record({
+        organizationId,
+        userId: user.userId,
+        action: 'supplier.created',
+        entityType: 'supplier',
+        entityId: s.id,
+        newValue: { code: s.code, companyName: s.companyName },
+      });
       return this.toResponse(s);
     } catch (e) {
       if (this.isUnique(e)) throw new ConflictException(`Supplier code "${dto.code}" already exists`);
@@ -64,8 +92,9 @@ export class SuppliersService {
     organizationId: string,
     id: string,
     dto: UpdateSupplierDto,
+    user: RequestUser,
   ): Promise<SupplierResponse> {
-    await this.ensureExists(organizationId, id);
+    const existing = await this.ensureExists(organizationId, id);
     const s = await this.prisma.supplier.update({
       where: { id },
       data: {
@@ -79,11 +108,70 @@ export class SuppliersService {
         ...(dto.leadTimeDays !== undefined ? { leadTimeDays: dto.leadTimeDays } : {}),
         ...(dto.rating !== undefined ? { rating: dto.rating } : {}),
         ...(dto.isPreferred !== undefined ? { isPreferred: dto.isPreferred } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
       },
     });
+    await this.audit.record({
+      organizationId,
+      userId: user.userId,
+      action: 'supplier.updated',
+      entityType: 'supplier',
+      entityId: id,
+      oldValue: { companyName: existing.companyName },
+      newValue: { companyName: s.companyName },
+    });
     return this.toResponse(s);
+  }
+
+  async changeStatus(
+    organizationId: string,
+    id: string,
+    status: EntityStatus,
+    user: RequestUser,
+  ): Promise<SupplierResponse> {
+    const existing = await this.ensureExists(organizationId, id);
+    assertStatusTransition(existing.status, status);
+    if (status === 'ARCHIVED') {
+      const check = await this.canArchiveSupplier(organizationId, id);
+      if (!check.canArchive) throw new BadRequestException(`Cannot archive: ${check.reasons.join('; ')}`);
+    }
+    const s = await this.prisma.supplier.update({
+      where: { id },
+      data: statusChangeData(status, user.userId),
+    });
+    await this.audit.record({
+      organizationId,
+      userId: user.userId,
+      action: 'supplier.status_changed',
+      entityType: 'supplier',
+      entityId: id,
+      oldValue: { status: existing.status },
+      newValue: { status },
+    });
+    return this.toResponse(s);
+  }
+
+  /** A supplier cannot be archived while it is still relied upon (preferred, or open receipts). */
+  async canArchiveSupplier(
+    organizationId: string,
+    supplierId: string,
+  ): Promise<{ canArchive: boolean; reasons: string[] }> {
+    const [preferredProducts, preferredPolicies, openReceipts] = await Promise.all([
+      this.prisma.product.count({
+        where: { organizationId, preferredSupplierId: supplierId, status: { not: 'ARCHIVED' } },
+      }),
+      this.prisma.inventoryPolicy.count({
+        where: { organizationId, preferredSupplierId: supplierId, status: { not: 'ARCHIVED' } },
+      }),
+      this.prisma.goodsReceipt.count({
+        where: { organizationId, supplierId, status: { in: [...OPEN_RECEIPT_STATUSES] } },
+      }),
+    ]);
+    const reasons: string[] = [];
+    if (preferredProducts > 0) reasons.push(`preferred supplier on ${preferredProducts} product(s)`);
+    if (preferredPolicies > 0) reasons.push(`preferred supplier on ${preferredPolicies} inventory policy(ies)`);
+    if (openReceipts > 0) reasons.push(`referenced by ${openReceipts} open goods receipt(s)`);
+    return { canArchive: reasons.length === 0, reasons };
   }
 
   // ---- supplier products ----
@@ -112,6 +200,7 @@ export class SuppliersService {
     await this.ensureExists(organizationId, supplierId);
     const product = await this.prisma.product.findFirst({
       where: { id: dto.productId, organizationId },
+      select: { id: true },
     });
     if (!product) throw new BadRequestException('Product not found in this organization');
 
@@ -129,6 +218,14 @@ export class SuppliersService {
         },
         include: { supplier: true, product: true },
       });
+      await this.audit.record({
+        organizationId,
+        userId: user.userId,
+        action: 'supplier_product.linked',
+        entityType: 'supplier_product',
+        entityId: row.id,
+        newValue: { supplierId, productId: dto.productId },
+      });
       return this.toProductResponse(row, user.permissions.includes(PERMISSIONS.COST_VIEW));
     } catch (e) {
       if (this.isUnique(e)) {
@@ -145,11 +242,7 @@ export class SuppliersService {
     dto: UpdateSupplierProductDto,
     user: RequestUser,
   ): Promise<SupplierProductResponse> {
-    const existing = await this.prisma.supplierProduct.findFirst({
-      where: { id: supplierProductId, supplierId, organizationId },
-    });
-    if (!existing) throw new NotFoundException('Supplier-product link not found');
-
+    await this.ensureProductLink(organizationId, supplierId, supplierProductId);
     const row = await this.prisma.supplierProduct.update({
       where: { id: supplierProductId },
       data: {
@@ -158,30 +251,63 @@ export class SuppliersService {
         ...(dto.leadTimeDays !== undefined ? { leadTimeDays: dto.leadTimeDays } : {}),
         ...(dto.minOrderQty !== undefined ? { minOrderQty: dto.minOrderQty } : {}),
         ...(dto.isPreferred !== undefined ? { isPreferred: dto.isPreferred } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
       include: { supplier: true, product: true },
+    });
+    await this.audit.record({
+      organizationId,
+      userId: user.userId,
+      action: 'supplier_product.updated',
+      entityType: 'supplier_product',
+      entityId: supplierProductId,
     });
     return this.toProductResponse(row, user.permissions.includes(PERMISSIONS.COST_VIEW));
   }
 
-  async removeProduct(
+  async changeProductStatus(
     organizationId: string,
     supplierId: string,
     supplierProductId: string,
-  ): Promise<void> {
-    const existing = await this.prisma.supplierProduct.findFirst({
-      where: { id: supplierProductId, supplierId, organizationId },
+    status: EntityStatus,
+    user: RequestUser,
+  ): Promise<SupplierProductResponse> {
+    const existing = await this.ensureProductLink(organizationId, supplierId, supplierProductId);
+    assertStatusTransition(existing.status, status);
+    const row = await this.prisma.supplierProduct.update({
+      where: { id: supplierProductId },
+      data: { status, statusChangedAt: new Date() },
+      include: { supplier: true, product: true },
     });
-    if (!existing) throw new NotFoundException('Supplier-product link not found');
-    await this.prisma.supplierProduct.delete({ where: { id: supplierProductId } });
+    await this.audit.record({
+      organizationId,
+      userId: user.userId,
+      action: 'supplier_product.status_changed',
+      entityType: 'supplier_product',
+      entityId: supplierProductId,
+      oldValue: { status: existing.status },
+      newValue: { status },
+    });
+    return this.toProductResponse(row, user.permissions.includes(PERMISSIONS.COST_VIEW));
   }
 
   // ---- helpers ----
 
-  private async ensureExists(organizationId: string, id: string): Promise<void> {
+  private async ensureExists(organizationId: string, id: string): Promise<Supplier> {
     const s = await this.prisma.supplier.findFirst({ where: { id, organizationId } });
     if (!s) throw new NotFoundException('Supplier not found');
+    return s;
+  }
+
+  private async ensureProductLink(
+    organizationId: string,
+    supplierId: string,
+    supplierProductId: string,
+  ): Promise<SupplierProduct> {
+    const existing = await this.prisma.supplierProduct.findFirst({
+      where: { id: supplierProductId, supplierId, organizationId },
+    });
+    if (!existing) throw new NotFoundException('Supplier-product link not found');
+    return existing;
   }
 
   private isUnique(e: unknown): boolean {
@@ -202,7 +328,7 @@ export class SuppliersService {
       leadTimeDays: s.leadTimeDays,
       rating: s.rating,
       isPreferred: s.isPreferred,
-      isActive: s.isActive,
+      status: s.status,
       notes: s.notes,
       createdAt: s.createdAt.toISOString(),
     };
@@ -223,7 +349,7 @@ export class SuppliersService {
       leadTimeDays: r.leadTimeDays,
       minOrderQty: r.minOrderQty ? r.minOrderQty.toString() : null,
       isPreferred: r.isPreferred,
-      isActive: r.isActive,
+      status: r.status,
     };
     if (canViewCost) res.cost = r.cost.toString();
     return res;
