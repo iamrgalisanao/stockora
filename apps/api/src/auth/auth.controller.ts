@@ -15,9 +15,11 @@ import { AuthService } from './auth.service';
 import { RegisterOrganizationDto } from './dto/register-organization.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RateLimit } from '../common/rate-limit';
 
 const ua = (req: Request) => (req.headers['user-agent'] as string | undefined) ?? undefined;
 
+@RateLimit('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

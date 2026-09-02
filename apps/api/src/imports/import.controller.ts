@@ -4,7 +4,9 @@ import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { ImportService } from './import.service';
 import { ImportUploadDto } from './dto/import.dto';
+import { RateLimit } from '../common/rate-limit';
 
+@RateLimit('sensitive')
 @Controller('imports')
 export class ImportController {
   constructor(private readonly imports: ImportService) {}

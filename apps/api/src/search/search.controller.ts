@@ -3,7 +3,9 @@ import { PERMISSIONS, SearchResult } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { GlobalSearchService } from './global-search.service';
+import { RateLimit } from '../common/rate-limit';
 
+@RateLimit('sensitive')
 @Controller('search')
 export class SearchController {
   constructor(private readonly search: GlobalSearchService) {}
