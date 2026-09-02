@@ -12,8 +12,18 @@ import type {
   ReleaseListItem,
   ReleaseResponse,
   SupplierResponse,
+  TransferListItem,
+  TransferResponse,
   WarehouseResponse,
 } from '@iw/contracts';
+
+export interface CreateTransferBody {
+  sourceWarehouseId: string;
+  destWarehouseId: string;
+  reference?: string;
+  notes?: string;
+  items: Array<{ productId: string; quantity: number }>;
+}
 
 export interface CreateReleaseBody {
   warehouseId: string;
@@ -125,5 +135,19 @@ export const api = {
       request<ReleaseResponse>(`/releases/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
     post: (id: string) => request<ReleaseResponse>(`/releases/${id}/post`, { method: 'POST' }),
     cancel: (id: string) => request<ReleaseResponse>(`/releases/${id}/cancel`, { method: 'POST' }),
+  },
+
+  transfers: {
+    list: () => request<TransferListItem[]>('/transfers'),
+    get: (id: string) => request<TransferResponse>(`/transfers/${id}`),
+    create: (body: CreateTransferBody) =>
+      request<TransferResponse>('/transfers', { method: 'POST', body: JSON.stringify(body) }),
+    submit: (id: string) => request<TransferResponse>(`/transfers/${id}/submit`, { method: 'POST' }),
+    approve: (id: string) => request<TransferResponse>(`/transfers/${id}/approve`, { method: 'POST' }),
+    reject: (id: string, reason: string) =>
+      request<TransferResponse>(`/transfers/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    dispatch: (id: string) => request<TransferResponse>(`/transfers/${id}/dispatch`, { method: 'POST' }),
+    receive: (id: string) => request<TransferResponse>(`/transfers/${id}/receive`, { method: 'POST' }),
+    cancel: (id: string) => request<TransferResponse>(`/transfers/${id}/cancel`, { method: 'POST' }),
   },
 };

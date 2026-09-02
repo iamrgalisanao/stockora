@@ -8,7 +8,14 @@ import { clearToken, getToken } from '../../lib/api';
 const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> }> = [
   { group: 'Overview', links: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/inventory', label: 'Stock Overview' }] },
   { group: 'Catalog', links: [{ href: '/products', label: 'Products' }] },
-  { group: 'Warehouse', links: [{ href: '/receiving', label: 'Receiving' }, { href: '/releases', label: 'Releases' }] },
+  {
+    group: 'Warehouse',
+    links: [
+      { href: '/receiving', label: 'Receiving' },
+      { href: '/releases', label: 'Releases' },
+      { href: '/transfers', label: 'Transfers' },
+    ],
+  },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {

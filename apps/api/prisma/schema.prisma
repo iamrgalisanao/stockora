@@ -276,6 +276,67 @@ model StockReleaseItem {
 }
 
 // ---------------------------------------------------------------------------
+// Stock Transfers (Phase 12) — approval + in-transit lifecycle
+// ---------------------------------------------------------------------------
+
+enum TransferStatus {
+  DRAFT
+  FOR_APPROVAL
+  APPROVED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model StockTransfer {
+  id                String         @id @default(uuid()) @db.Uuid
+  organizationId    String         @map("organization_id") @db.Uuid
+  transferNumber    String         @map("transfer_number")
+  sourceWarehouseId String         @map("source_warehouse_id") @db.Uuid
+  destWarehouseId   String         @map("dest_warehouse_id") @db.Uuid
+  reference         String?
+  status            TransferStatus @default(DRAFT)
+  notes             String?
+  requestorId       String?        @map("requestor_id") @db.Uuid
+  approvedById      String?        @map("approved_by_id") @db.Uuid
+  dispatchedById    String?        @map("dispatched_by_id") @db.Uuid
+  receivedById      String?        @map("received_by_id") @db.Uuid
+  dispatchedAt      DateTime?      @map("dispatched_at")
+  receivedAt        DateTime?      @map("received_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  sourceWarehouse Warehouse           @relation("TransferSource", fields: [sourceWarehouseId], references: [id])
+  destWarehouse   Warehouse           @relation("TransferDest", fields: [destWarehouseId], references: [id])
+  items           StockTransferItem[]
+
+  @@unique([organizationId, transferNumber])
+  @@index([organizationId, status])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id               String  @id @default(uuid()) @db.Uuid
+  organizationId   String  @map("organization_id") @db.Uuid
+  transferId       String  @map("transfer_id") @db.Uuid
+  productId        String  @map("product_id") @db.Uuid
+  variantId        String? @map("variant_id") @db.Uuid
+  quantity         Decimal @default(0) @db.Decimal(18, 4)
+  qtyDispatched    Decimal @default(0) @map("qty_dispatched") @db.Decimal(18, 4)
+  qtyReceived      Decimal @default(0) @map("qty_received") @db.Decimal(18, 4)
+  // Source WAC captured at dispatch, carried to the destination on receipt.
+  dispatchUnitCost Decimal @default(0) @map("dispatch_unit_cost") @db.Decimal(18, 4)
+  remarks          String?
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product       @relation(fields: [productId], references: [id])
+
+  @@index([transferId])
+  @@map("stock_transfer_items")
+}
+
+// ---------------------------------------------------------------------------
 // Inventory Ledger + Balance projection (Phase 07-08)
 // ---------------------------------------------------------------------------
 
@@ -523,6 +584,7 @@ model Product {
   balances          InventoryBalance[]
   receiptItems      GoodsReceiptItem[]
   releaseItems      StockReleaseItem[]
+  transferItems     StockTransferItem[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, barcode])
@@ -576,6 +638,8 @@ model Warehouse {
   balances  InventoryBalance[]
   goodsReceipts GoodsReceipt[]
   stockReleases StockRelease[]
+  transfersOut  StockTransfer[] @relation("TransferSource")
+  transfersIn   StockTransfer[] @relation("TransferDest")
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
