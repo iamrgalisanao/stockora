@@ -145,13 +145,16 @@ already do.
 return.view      -- see returns
 return.create    -- create/edit a DRAFT return
 return.receive   -- receive returned stock into quarantine
-return.inspect   -- inspect + RESTOCK (light operational access)
-return.dispose   -- destructive outcomes: DAMAGED, RETURN_TO_SUPPLIER, DISPOSE
+return.inspect   -- inspect + condition outcomes: RESTOCK, DAMAGED
+return.dispose   -- outbound/irreversible outcomes: RETURN_TO_SUPPLIER, DISPOSE
 ```
 
-RESTOCK is gated by `return.inspect`; the destructive outcomes require `return.dispose`. Seeded into
-system roles: warehouse staff get view/create/receive/inspect; managers and admin additionally get
-`return.dispose`.
+Inspection assesses **condition** (RESTOCK / DAMAGED — the goods stay in-house), gated by
+`return.inspect`. Physically removing stock from the building (RETURN_TO_SUPPLIER / DISPOSE) requires
+`return.dispose`. (Refined in 2B.2B from the initial draft, which grouped DAMAGED with the destructive
+outcomes; DAMAGED keeps goods in the damaged pool rather than shipping/scrapping them, so it reads as an
+inspection outcome.) Seeded into system roles: warehouse staff get view/create/receive/inspect (so they
+can restock and mark damaged); managers and admin additionally get `return.dispose`.
 
 ## Deferred scope (explicit)
 

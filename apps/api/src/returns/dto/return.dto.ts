@@ -12,7 +12,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { RETURN_TYPES, type ReturnType } from '@iw/contracts';
+import { DISPOSITION_TYPES, RETURN_TYPES, type DispositionType, type ReturnType } from '@iw/contracts';
 
 const q = { maxDecimalPlaces: 4 } as const;
 
@@ -49,4 +49,15 @@ export class ReceiveReturnDto {
   @ValidateNested({ each: true })
   @Type(() => ReceiveReturnLineDto)
   lines?: ReceiveReturnLineDto[];
+}
+
+/** One inspection decision against a received return line (2B.2B). */
+export class CreateDispositionDto {
+  @IsUUID() lineId!: string;
+  @IsIn(DISPOSITION_TYPES) type!: DispositionType;
+  @IsNumber(q) @IsPositive() quantity!: number;
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+  /** Optional client key — a replay with the same key is a no-op (does not post twice). */
+  @IsOptional() @IsString() @MaxLength(120) idempotencyKey?: string;
 }

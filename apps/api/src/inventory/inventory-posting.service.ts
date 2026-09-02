@@ -131,6 +131,40 @@ export class InventoryPostingService {
     );
   }
 
+  /**
+   * Append ONE movement inside the caller's transaction — for domains that must post a ledger change
+   * and mutate their own document atomically under a shared lock (returns disposition, ADR 0006).
+   * Applies the same balance lock + bucket negative-guards as the public commands. The caller owns the
+   * transaction (and any prior row locks); pass explicit `deltas` for non-default bucket effects.
+   */
+  postLineInTx(
+    tx: Tx,
+    ctx: PostContext,
+    input: {
+      movementType: MovementType;
+      warehouseId: string;
+      referenceType: string;
+      referenceId: string;
+      line: StockLine;
+    },
+  ): Promise<InventoryMovement> {
+    return this.applyMovement(tx, ctx, {
+      movementType: input.movementType,
+      productId: input.line.productId,
+      variantId: input.line.variantId ?? null,
+      warehouseId: input.warehouseId,
+      locationId: input.line.locationId ?? null,
+      quantity: D(input.line.quantity),
+      unitCost: input.line.unitCost != null ? D(input.line.unitCost) : null,
+      deltas: input.line.deltas,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+      idempotencyKey: ctx.idempotencyKey ?? null,
+      reason: ctx.reason ?? null,
+      allowNegative: ctx.allowNegative,
+    });
+  }
+
   /** Stock adjustment in/out with a reason. */
   adjustment(
     ctx: PostContext,

@@ -1,13 +1,14 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ReturnStatus } from '@prisma/client';
-import type { ReturnResponse, ReturnType } from '@iw/contracts';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { MovementType, Prisma, ReturnStatus } from '@prisma/client';
+import { PERMISSIONS, type DispositionType, type ReturnResponse, type ReturnType } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
 import type { RequestUser } from '../common/request-user';
-import { D, NIL_UUID } from '../inventory/inventory.constants';
-import { CreateReturnDto, ReceiveReturnDto } from './dto/return.dto';
+import { BucketDeltas, D, NIL_UUID, ZERO } from '../inventory/inventory.constants';
+import { CreateReturnDto, CreateDispositionDto, ReceiveReturnDto } from './dto/return.dto';
 
 export interface ReturnListFilter {
   status?: ReturnStatus;
@@ -203,6 +204,127 @@ export class ReturnsService {
       oldValue: { status: existing.status }, newValue: { status: 'CANCELLED' },
     });
     return this.toResponse(updated);
+  }
+
+  // ---- disposition (RECEIVED/PARTIALLY_DISPOSED -> ... -> COMPLETED), 2B.2B ----
+
+  /**
+   * Split quarantined returned stock into one disposition outcome, posted immutably through the ledger
+   * (ADR 0006). Concurrency-safe: the return line is locked FOR UPDATE, remaining quarantine is read
+   * under that lock, and the ledger's quarantined/damaged negative-guards act as a second backstop.
+   * The document status rolls up mechanically from ALL lines. Idempotent when given a client key.
+   */
+  async dispose(
+    organizationId: string,
+    user: RequestUser,
+    id: string,
+    dto: CreateDispositionDto,
+  ): Promise<ReturnResponse> {
+    const existing = await this.load(organizationId, user, id);
+    if (existing.status !== 'RECEIVED' && existing.status !== 'PARTIALLY_DISPOSED') {
+      throw new ConflictException(`A ${existing.status} return cannot be dispositioned`);
+    }
+    if (!existing.lines.some((l) => l.id === dto.lineId)) {
+      throw new BadRequestException('Line does not belong to this return');
+    }
+    // Permission split (ADR 0006): condition outcomes (RESTOCK/DAMAGED) need return.inspect (the route
+    // floor); physically removing stock (RETURN_TO_SUPPLIER/DISPOSE) additionally needs return.dispose.
+    const destructive = dto.type === 'RETURN_TO_SUPPLIER' || dto.type === 'DISPOSE';
+    if (destructive && !user.permissions.includes(PERMISSIONS.RETURN_DISPOSE)) {
+      throw new ForbiddenException('return.dispose permission is required for this outcome');
+    }
+
+    const qty = new Prisma.Decimal(dto.quantity);
+    const { movementType, deltas } = this.dispositionEffect(dto.type, qty);
+    const idemKey = dto.idempotencyKey ? `return_disposition:${organizationId}:${dto.idempotencyKey}` : randomUUID();
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Serialize concurrent dispositions on THIS line; read the durable remaining under the lock.
+        const rows = await tx.$queryRaw<Array<{ received: string; disposed: string; product_id: string; variant_id: string; location_id: string | null }>>`
+          SELECT received_quantity::text AS received, disposed_quantity::text AS disposed, product_id, variant_id, location_id
+          FROM return_lines WHERE id = ${dto.lineId}::uuid FOR UPDATE`;
+        const r = rows[0];
+        if (!r) throw new BadRequestException('Line not found');
+
+        // Idempotent replay: this disposition key already posted its movement — do nothing more.
+        if (dto.idempotencyKey) {
+          const prior = await tx.inventoryMovement.findFirst({ where: { organizationId, idempotencyKey: idemKey } });
+          if (prior) return;
+        }
+
+        const remaining = D(r.received).sub(r.disposed);
+        if (qty.gt(remaining)) {
+          throw new BadRequestException(`Disposition ${qty.toString()} exceeds remaining quarantined ${remaining.toString()}`);
+        }
+
+        // Immutable ledger posting (balance lock + bucket negative-guards as the second guard).
+        await this.posting.postLineInTx(
+          tx,
+          { organizationId, actorId: user.userId, idempotencyKey: idemKey, reason: dto.reason ?? null },
+          {
+            movementType,
+            warehouseId: existing.warehouseId,
+            referenceType: 'inventory_return',
+            referenceId: existing.id,
+            line: {
+              productId: r.product_id,
+              variantId: r.variant_id === NIL_UUID ? null : r.variant_id,
+              quantity: qty,
+              locationId: r.location_id,
+              deltas,
+            },
+          },
+        );
+
+        await tx.returnDisposition.create({
+          data: {
+            returnLineId: dto.lineId, type: dto.type, quantity: qty,
+            reason: dto.reason ?? null, notes: dto.notes ?? null, performedById: user.userId,
+          },
+        });
+        await tx.returnLine.update({ where: { id: dto.lineId }, data: { disposedQuantity: { increment: qty } } });
+
+        // Roll document status up from ALL lines — not just the one touched (mechanical received-vs-disposed).
+        const all = await tx.returnLine.findMany({ where: { returnId: id }, select: { receivedQuantity: true, disposedQuantity: true } });
+        const totalReceived = all.reduce((a, l) => a.add(l.receivedQuantity), ZERO);
+        const totalDisposed = all.reduce((a, l) => a.add(l.disposedQuantity), ZERO);
+        const completed = totalDisposed.gte(totalReceived);
+        await tx.inventoryReturn.update({
+          where: { id },
+          data: { status: completed ? 'COMPLETED' : 'PARTIALLY_DISPOSED', completedAt: completed ? new Date() : null },
+        });
+      });
+    } catch (e) {
+      // A concurrent replay with the same key lost the movement-insert race — treat as idempotent.
+      if (!this.isUniqueViolation(e)) throw e;
+    }
+
+    await this.audit.record({
+      organizationId, userId: user.userId, action: 'return.dispositioned', entityType: 'return',
+      entityId: id, entityDisplay: existing.returnNo, warehouseId: existing.warehouseId,
+      newValue: { type: dto.type, quantity: qty.toString(), lineId: dto.lineId },
+    });
+    return this.get(organizationId, user, id);
+  }
+
+  /** The immutable ledger effect of each disposition outcome (explicit deltas, ADR 0006). */
+  private dispositionEffect(type: DispositionType, q: Prisma.Decimal): { movementType: MovementType; deltas: BucketDeltas } {
+    const base = { onHand: ZERO, reserved: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO };
+    switch (type) {
+      case 'RESTOCK': // release the hold; stock stays on hand and becomes sellable
+        return { movementType: MovementType.RETURN_RESTOCK, deltas: { ...base, quarantined: q.neg() } };
+      case 'DAMAGED': // move out of the primary pool into the damaged pool; clear the hold
+        return { movementType: MovementType.DAMAGE, deltas: { ...base, onHand: q.neg(), quarantined: q.neg(), damaged: q } };
+      case 'RETURN_TO_SUPPLIER': // ships out of the building; clear the hold
+        return { movementType: MovementType.SUPPLIER_RETURN, deltas: { ...base, onHand: q.neg(), quarantined: q.neg() } };
+      case 'DISPOSE': // scrapped out of the building; clear the hold
+        return { movementType: MovementType.RETURN_DISPOSE, deltas: { ...base, onHand: q.neg(), quarantined: q.neg() } };
+    }
+  }
+
+  private isUniqueViolation(e: unknown): boolean {
+    return typeof e === 'object' && e !== null && 'code' in e && (e as { code: string }).code === 'P2002';
   }
 
   // ---- helpers ----
