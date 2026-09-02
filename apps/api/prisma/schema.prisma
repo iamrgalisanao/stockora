@@ -860,6 +860,7 @@ model Product {
   countItems        StockCountItem[]
   barcodes          ProductBarcode[]
   inventoryPolicies InventoryPolicy[]
+  reservationLines  ReservationLine[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, categoryId])
@@ -925,10 +926,72 @@ model Warehouse {
   adjustments   StockAdjustment[]
   stockCounts   StockCount[]
   inventoryPolicies InventoryPolicy[]
+  reservations  InventoryReservation[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
   @@map("warehouses")
+}
+
+enum ReservationStatus {
+  DRAFT
+  RESERVED
+  PARTIALLY_CONSUMED
+  CONSUMED
+  RELEASED
+  EXPIRED
+  CANCELLED
+}
+
+enum ReservationSource {
+  MANUAL
+  INTERNAL_REQUEST
+  EXTERNAL
+}
+
+/// A commitment against availability (ADR 0005). Reserving adjusts the balance `reserved` bucket; it
+/// NEVER posts a ledger movement. Physical on-hand changes only at consumption (2B.1B).
+model InventoryReservation {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @map("organization_id") @db.Uuid
+  reservationNo  String            @map("reservation_no")
+  warehouseId    String            @map("warehouse_id") @db.Uuid
+  sourceType     ReservationSource @default(MANUAL) @map("source_type")
+  sourceId       String?           @map("source_id") // opaque external reference
+  status         ReservationStatus @default(DRAFT)
+  expiresAt      DateTime?         @map("expires_at")
+  notes          String?
+  createdById    String?           @map("created_by_id") @db.Uuid
+  createdAt      DateTime          @default(now()) @map("created_at")
+  confirmedAt    DateTime?         @map("confirmed_at")
+  completedAt    DateTime?         @map("completed_at")
+
+  warehouse Warehouse         @relation(fields: [warehouseId], references: [id])
+  lines     ReservationLine[]
+
+  @@unique([organizationId, reservationNo])
+  @@index([organizationId, status])
+  @@index([organizationId, warehouseId, status])
+  @@index([organizationId, expiresAt])
+  @@map("inventory_reservations")
+}
+
+model ReservationLine {
+  id               String   @id @default(uuid()) @db.Uuid
+  reservationId    String   @map("reservation_id") @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  // NIL-UUID sentinel = base product (matches the balance projection grain).
+  variantId        String   @map("variant_id") @db.Uuid
+  locationId       String?  @map("location_id") @db.Uuid // advisory hint only in 2B.1A
+  quantity         Decimal  @db.Decimal(18, 4)
+  consumedQuantity Decimal  @default(0) @map("consumed_quantity") @db.Decimal(18, 4)
+
+  reservation InventoryReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  product     Product              @relation(fields: [productId], references: [id])
+
+  @@index([reservationId])
+  @@index([productId, variantId])
+  @@map("reservation_lines")
 }
 
 model WarehouseLocation {
