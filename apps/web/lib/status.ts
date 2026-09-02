@@ -1,7 +1,13 @@
 /** Maps a document status to a badge CSS class. */
+const OK = ['RELEASED', 'COMPLETED', 'RECEIVED', 'POSTED'];
+const WARN = [
+  'FOR_APPROVAL',
+  'APPROVED',
+  'PARTIALLY_RECEIVED',
+  'IN_TRANSIT',
+  'SUBMITTED',
+  'PENDING_SECOND_APPROVAL',
+];
+
 export const statusClass = (s: string): 'ok' | 'warn' | 'muted' =>
-  s === 'RELEASED' || s === 'COMPLETED' || s === 'RECEIVED'
-    ? 'ok'
-    : s === 'FOR_APPROVAL' || s === 'APPROVED' || s === 'PARTIALLY_RECEIVED' || s === 'IN_TRANSIT'
-      ? 'warn'
-      : 'muted';
+  OK.includes(s) ? 'ok' : WARN.includes(s) ? 'warn' : 'muted';

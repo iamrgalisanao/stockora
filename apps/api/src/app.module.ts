@@ -18,6 +18,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { ReceivingModule } from './receiving/receiving.module';
 import { ReleasesModule } from './releases/releases.module';
 import { TransfersModule } from './transfers/transfers.module';
+import { AdjustmentsModule } from './adjustments/adjustments.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -45,6 +46,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     ReceivingModule,
     ReleasesModule,
     TransfersModule,
+    AdjustmentsModule,
   ],
   controllers: [HealthController],
   providers: [

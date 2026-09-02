@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { OrganizationResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface UpdateOrganizationInput {
   name?: string;
   currency?: string;
+  highValueAdjustmentThreshold?: number;
 }
 
 @Injectable()
@@ -24,11 +26,23 @@ export class OrganizationsService {
     input: UpdateOrganizationInput,
   ): Promise<OrganizationResponse> {
     // where scoped by id (the tenant boundary); a caller can only ever reach their own org.
+    let settingsUpdate: Record<string, unknown> | undefined;
+    if (input.highValueAdjustmentThreshold !== undefined) {
+      const current = await this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { settings: true },
+      });
+      settingsUpdate = {
+        ...((current?.settings as Record<string, unknown>) ?? {}),
+        highValueAdjustmentThreshold: input.highValueAdjustmentThreshold,
+      };
+    }
     const org = await this.prisma.organization.update({
       where: { id: organizationId },
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.currency !== undefined ? { currency: input.currency } : {}),
+        ...(settingsUpdate !== undefined ? { settings: settingsUpdate as Prisma.InputJsonObject } : {}),
       },
     });
     return this.toResponse(org);

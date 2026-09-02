@@ -10,6 +10,7 @@ import * as bcrypt from 'bcryptjs';
 import {
   AuthenticatedUser,
   AuthTokenResponse,
+  DEFAULT_ADJUSTMENT_REASONS,
   PermissionCode,
   SYSTEM_ROLES,
 } from '@iw/contracts';
@@ -86,6 +87,11 @@ export class AuthService {
           roleId: adminRoleId,
           warehouseScope: [], // empty = access to all warehouses
         },
+      });
+
+      // Seed default (editable) adjustment reasons for the new organization.
+      await tx.adjustmentReason.createMany({
+        data: DEFAULT_ADJUSTMENT_REASONS.map((r) => ({ organizationId: org.id, code: r.code, name: r.name })),
       });
 
       return membership.id;

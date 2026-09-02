@@ -1,4 +1,8 @@
 import type {
+  AdjustmentDirection,
+  AdjustmentListItem,
+  AdjustmentReasonResponse,
+  AdjustmentResponse,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -23,6 +27,13 @@ export interface CreateTransferBody {
   reference?: string;
   notes?: string;
   items: Array<{ productId: string; quantity: number }>;
+}
+
+export interface CreateAdjustmentBody {
+  warehouseId: string;
+  reasonId?: string;
+  notes?: string;
+  items: Array<{ productId: string; direction: AdjustmentDirection; quantity: number; unitCost?: number }>;
 }
 
 export interface CreateReleaseBody {
@@ -149,5 +160,27 @@ export const api = {
     dispatch: (id: string) => request<TransferResponse>(`/transfers/${id}/dispatch`, { method: 'POST' }),
     receive: (id: string) => request<TransferResponse>(`/transfers/${id}/receive`, { method: 'POST' }),
     cancel: (id: string) => request<TransferResponse>(`/transfers/${id}/cancel`, { method: 'POST' }),
+  },
+
+  adjustments: {
+    list: () => request<AdjustmentListItem[]>('/adjustments'),
+    get: (id: string) => request<AdjustmentResponse>(`/adjustments/${id}`),
+    create: (body: CreateAdjustmentBody) =>
+      request<AdjustmentResponse>('/adjustments', { method: 'POST', body: JSON.stringify(body) }),
+    submit: (id: string) => request<AdjustmentResponse>(`/adjustments/${id}/submit`, { method: 'POST' }),
+    approve: (id: string) => request<AdjustmentResponse>(`/adjustments/${id}/approve`, { method: 'POST' }),
+    secondApprove: (id: string) => request<AdjustmentResponse>(`/adjustments/${id}/second-approve`, { method: 'POST' }),
+    reject: (id: string, reason: string) =>
+      request<AdjustmentResponse>(`/adjustments/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    post: (id: string) => request<AdjustmentResponse>(`/adjustments/${id}/post`, { method: 'POST' }),
+    cancel: (id: string) => request<AdjustmentResponse>(`/adjustments/${id}/cancel`, { method: 'POST' }),
+  },
+
+  adjustmentReasons: {
+    list: () => request<AdjustmentReasonResponse[]>('/adjustment-reasons'),
+    create: (body: { code: string; name: string; requiresEvidence?: boolean }) =>
+      request<AdjustmentReasonResponse>('/adjustment-reasons', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: { name?: string; isActive?: boolean }) =>
+      request<AdjustmentReasonResponse>(`/adjustment-reasons/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   },
 };

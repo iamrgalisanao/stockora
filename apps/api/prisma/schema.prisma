@@ -337,6 +337,86 @@ model StockTransferItem {
 }
 
 // ---------------------------------------------------------------------------
+// Stock Adjustments (Phase 14) — approval + high-value second approver
+// ---------------------------------------------------------------------------
+
+enum AdjustmentStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_SECOND_APPROVAL
+  APPROVED
+  POSTED
+  REJECTED
+  CANCELLED
+}
+
+enum AdjustmentDirection {
+  IN
+  OUT
+}
+
+model AdjustmentReason {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  code             String
+  name             String
+  requiresEvidence Boolean  @default(false) @map("requires_evidence")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  adjustments StockAdjustment[]
+
+  @@unique([organizationId, code])
+  @@map("adjustment_reasons")
+}
+
+model StockAdjustment {
+  id                     String           @id @default(uuid()) @db.Uuid
+  organizationId         String           @map("organization_id") @db.Uuid
+  adjustmentNumber       String           @map("adjustment_number")
+  warehouseId            String           @map("warehouse_id") @db.Uuid
+  reasonId               String?          @map("reason_id") @db.Uuid
+  status                 AdjustmentStatus @default(DRAFT)
+  requiresSecondApproval Boolean          @default(false) @map("requires_second_approval")
+  estimatedValue         Decimal          @default(0) @map("estimated_value") @db.Decimal(18, 4)
+  requestorId            String?          @map("requestor_id") @db.Uuid
+  firstApprovedById      String?          @map("first_approved_by_id") @db.Uuid
+  secondApprovedById     String?          @map("second_approved_by_id") @db.Uuid
+  notes                  String?
+  postedAt               DateTime?        @map("posted_at")
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
+
+  warehouse Warehouse             @relation(fields: [warehouseId], references: [id])
+  reason    AdjustmentReason?     @relation(fields: [reasonId], references: [id], onDelete: SetNull)
+  items     StockAdjustmentItem[]
+
+  @@unique([organizationId, adjustmentNumber])
+  @@index([organizationId, status])
+  @@map("stock_adjustments")
+}
+
+model StockAdjustmentItem {
+  id             String              @id @default(uuid()) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  adjustmentId   String              @map("adjustment_id") @db.Uuid
+  productId      String              @map("product_id") @db.Uuid
+  variantId      String?             @map("variant_id") @db.Uuid
+  direction      AdjustmentDirection
+  quantity       Decimal             @default(0) @db.Decimal(18, 4)
+  unitCost       Decimal             @default(0) @map("unit_cost") @db.Decimal(18, 4)
+  locationId     String?             @map("location_id") @db.Uuid
+  remarks        String?
+
+  adjustment StockAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  product    Product         @relation(fields: [productId], references: [id])
+
+  @@index([adjustmentId])
+  @@map("stock_adjustment_items")
+}
+
+// ---------------------------------------------------------------------------
 // Inventory Ledger + Balance projection (Phase 07-08)
 // ---------------------------------------------------------------------------
 
@@ -585,6 +665,7 @@ model Product {
   receiptItems      GoodsReceiptItem[]
   releaseItems      StockReleaseItem[]
   transferItems     StockTransferItem[]
+  adjustmentItems   StockAdjustmentItem[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, barcode])
@@ -640,6 +721,7 @@ model Warehouse {
   stockReleases StockRelease[]
   transfersOut  StockTransfer[] @relation("TransferSource")
   transfersIn   StockTransfer[] @relation("TransferDest")
+  adjustments   StockAdjustment[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])

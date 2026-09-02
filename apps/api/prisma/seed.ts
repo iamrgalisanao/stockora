@@ -2,6 +2,7 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import {
+  DEFAULT_ADJUSTMENT_REASONS,
   PERMISSION_DEFINITIONS,
   SYSTEM_ROLES,
   SYSTEM_ROLE_DEFINITIONS,
@@ -201,7 +202,17 @@ async function seedDemoCatalog(): Promise<void> {
     });
   }
 
-  console.log('Demo data ensured (units, conversions, category, brand, product, supplier, warehouse).');
+  // Default adjustment reasons (idempotent)
+  for (const r of DEFAULT_ADJUSTMENT_REASONS) {
+    const exists = await prisma.adjustmentReason.findUnique({
+      where: { organizationId_code: { organizationId: org.id, code: r.code } },
+    });
+    if (!exists) {
+      await prisma.adjustmentReason.create({ data: { organizationId: org.id, code: r.code, name: r.name } });
+    }
+  }
+
+  console.log('Demo data ensured (units, conversions, category, brand, product, supplier, warehouse, reasons).');
   console.log('  Tip: post stock via POST /api/inventory/opening-balances.');
 }
 

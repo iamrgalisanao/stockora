@@ -16,6 +16,8 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/transfers', label: 'Transfers' },
     ],
   },
+  { group: 'Control', links: [{ href: '/adjustments', label: 'Adjustments' }] },
+  { group: 'Administration', links: [{ href: '/admin/adjustment-reasons', label: 'Adjustment Reasons' }] },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {
