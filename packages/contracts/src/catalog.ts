@@ -93,10 +93,7 @@ export interface ProductResponse {
   taxCategory: string | null;
   preferredSupplierId: string | null;
 
-  minStock: string;
-  maxStock: string;
-  reorderPoint: string;
-  reorderQty: string;
+  // Reorder thresholds moved to InventoryPolicy (per warehouse).
   leadTimeDays: number;
 
   trackInventory: boolean;

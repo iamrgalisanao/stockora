@@ -123,7 +123,6 @@ describe('Users + Product Master (e2e)', () => {
         baseUomId: unitId,
         cost: 2950,
         sellingPrice: 3600,
-        reorderPoint: 15,
       })
       .expect(201);
     expect(res.body.cost).toBe('2950');

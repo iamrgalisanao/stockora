@@ -28,12 +28,16 @@ describe('Reports (e2e)', () => {
     const warehouseId = (await http().post('/api/warehouses').set(bearer()).send({ code: 'RW', name: 'W' }).expect(201)).body.id;
     const catId = (await http().post('/api/categories').set(bearer()).send({ name: 'Storage' }).expect(201)).body.id;
 
-    const a = (await http().post('/api/products').set(bearer()).send({ sku: 'A-1', name: 'A', baseUomId: unitId, categoryId: catId, cost: 100, reorderPoint: 15 }).expect(201)).body.id;
+    const a = (await http().post('/api/products').set(bearer()).send({ sku: 'A-1', name: 'A', baseUomId: unitId, categoryId: catId, cost: 100 }).expect(201)).body.id;
     const b = (await http().post('/api/products').set(bearer()).send({ sku: 'B-1', name: 'B', baseUomId: unitId, cost: 50 }).expect(201)).body.id;
 
     await http().post('/api/inventory/opening-balances').set(bearer())
       .send({ warehouseId, lines: [{ productId: a, quantity: 10, unitCost: 100 }, { productId: b, quantity: 100, unitCost: 50 }] })
       .expect(201);
+
+    // Stock-status is now policy-driven: A-1 has a reorder point above its stock, B-1 is comfortable.
+    await http().post(`/api/products/${a}/policies`).set(bearer()).send({ warehouseId, reorderPoint: 15, reorderQuantity: 20 }).expect(201);
+    await http().post(`/api/products/${b}/policies`).set(bearer()).send({ warehouseId, reorderPoint: 5, reorderQuantity: 20 }).expect(201);
   });
 
   afterAll(async () => {
@@ -53,16 +57,18 @@ describe('Reports (e2e)', () => {
     await http().get('/api/reports/valuation?groupBy=bogus').set(bearer()).expect(400);
   });
 
-  it('classifies stock status and filters by it', async () => {
+  it('classifies stock status (reorder state) and filters by it', async () => {
     const all = await http().get('/api/reports/stock-status').set(bearer()).expect(200);
-    const a = all.body.find((r: { sku: string }) => r.sku === 'A-1');
-    const b = all.body.find((r: { sku: string }) => r.sku === 'B-1');
-    expect(a.status).toBe('LOW'); // 10 available <= reorderPoint 15
-    expect(b.status).toBe('OK');
+    const a = all.body.find((r: { productSku: string }) => r.productSku === 'A-1');
+    const b = all.body.find((r: { productSku: string }) => r.productSku === 'B-1');
+    expect(a.state).toBe('REORDER_REQUIRED'); // 10 available <= reorderPoint 15
+    expect(b.state).toBe('OK');
 
-    const low = await http().get('/api/reports/stock-status?status=LOW').set(bearer()).expect(200);
-    expect(low.body.every((r: { status: string }) => r.status === 'LOW')).toBe(true);
-    expect(low.body.map((r: { sku: string }) => r.sku)).toContain('A-1');
+    const req = await http().get('/api/reports/stock-status?state=REORDER_REQUIRED').set(bearer()).expect(200);
+    expect(req.body.every((r: { state: string }) => r.state === 'REORDER_REQUIRED')).toBe(true);
+    expect(req.body.map((r: { productSku: string }) => r.productSku)).toContain('A-1');
+
+    await http().get('/api/reports/stock-status?state=BOGUS').set(bearer()).expect(400);
   });
 
   it('lists dead stock (never issued) with value', async () => {

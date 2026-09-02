@@ -21,9 +21,9 @@ import type {
   CountType,
   DashboardSummary,
   DeadStockRow,
-  ReorderRecommendation,
-  StockStatus,
-  StockStatusRow,
+  InventoryPolicyResponse,
+  ReorderAssessment,
+  ReorderState,
   ValuationGrouping,
   ValuationReport,
   LoginRequest,
@@ -221,12 +221,12 @@ export const api = {
   },
 
   dashboard: () => request<DashboardSummary>('/dashboard/summary'),
-  reorder: () => request<ReorderRecommendation[]>('/reorder/recommendations'),
+  reorder: () => request<ReorderAssessment[]>('/reorder/recommendations'),
 
   reports: {
     valuation: (groupBy: ValuationGrouping) => request<ValuationReport>(`/reports/valuation?groupBy=${groupBy}`),
-    stockStatus: (status?: StockStatus) =>
-      request<StockStatusRow[]>(`/reports/stock-status${status ? `?status=${status}` : ''}`),
+    stockStatus: (state?: ReorderState) =>
+      request<ReorderAssessment[]>(`/reports/stock-status${state ? `?state=${state}` : ''}`),
     deadStock: (days = 90) => request<DeadStockRow[]>(`/reports/dead-stock?days=${days}`),
   },
 
@@ -283,6 +283,31 @@ export const api = {
       request<BarcodeResponse>(`/products/${id}/barcodes/${barcodeId}`, { method: 'PATCH', body: JSON.stringify(body) }),
     removeBarcode: (id: string, barcodeId: string) =>
       request<void>(`/products/${id}/barcodes/${barcodeId}`, { method: 'DELETE' }),
+    policies: (id: string) => request<InventoryPolicyResponse[]>(`/products/${id}/policies`),
+    createPolicy: (
+      id: string,
+      body: {
+        warehouseId: string;
+        variantId?: string;
+        minStock?: number;
+        maxStock?: number;
+        reorderPoint?: number;
+        reorderQuantity: number;
+        preferredSupplierId?: string;
+      },
+    ) => request<InventoryPolicyResponse>(`/products/${id}/policies`, { method: 'POST', body: JSON.stringify(body) }),
+    updatePolicy: (
+      policyId: string,
+      body: {
+        minStock?: number;
+        maxStock?: number | null;
+        reorderPoint?: number;
+        reorderQuantity?: number;
+        preferredSupplierId?: string | null;
+      },
+    ) => request<InventoryPolicyResponse>(`/inventory-policies/${policyId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changePolicyStatus: (policyId: string, status: EntityStatus) =>
+      request<InventoryPolicyResponse>(`/inventory-policies/${policyId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
   },
   resolve: (code: string) => request<BarcodeResolutionResult>(`/resolve?code=${encodeURIComponent(code)}`),
 };

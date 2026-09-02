@@ -3,20 +3,24 @@ import { Prisma } from '@prisma/client';
 import { PERMISSIONS } from '@iw/contracts';
 import type {
   DeadStockRow,
-  StockStatus,
-  StockStatusRow,
+  ReorderAssessment,
+  ReorderState,
   ValuationGrouping,
   ValuationReport,
 } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import type { RequestUser } from '../common/request-user';
+import { ReorderAssessmentService } from '../inventory-policy/reorder-assessment.service';
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reorder: ReorderAssessmentService,
+  ) {}
 
   private whIn(user: RequestUser) {
     return user.warehouseScope !== null ? { in: user.warehouseScope } : undefined;
@@ -75,48 +79,28 @@ export class ReportsService {
     return { groupBy, rows, totalValue: total.toDecimalPlaces(4).toString() };
   }
 
+  /**
+   * Policy-driven stock status: the authoritative reorder assessment, optionally
+   * filtered to a single derived state. Sorted worst-first for operational triage.
+   */
   async stockStatus(
     organizationId: string,
     user: RequestUser,
-    filter?: StockStatus,
-  ): Promise<StockStatusRow[]> {
-    const whIn = this.whIn(user);
-    const products = await this.prisma.product.findMany({
-      where: { organizationId, trackInventory: true },
-      select: { id: true, sku: true, name: true, reorderPoint: true, maxStock: true },
-      orderBy: { sku: 'asc' },
-    });
-    const balances = await this.prisma.inventoryBalance.groupBy({
-      by: ['productId'],
-      where: { organizationId, ...(whIn ? { warehouseId: whIn } : {}) },
-      _sum: { onHand: true, reserved: true, quarantined: true },
-    });
-    const byProduct = new Map(balances.map((b) => [b.productId, b._sum]));
-
-    const rows: StockStatusRow[] = [];
-    for (const p of products) {
-      const s = byProduct.get(p.id);
-      const onHand = D(s?.onHand ?? 0);
-      const available = onHand.sub(s?.reserved ?? 0).sub(s?.quarantined ?? 0);
-      const reorderPoint = D(p.reorderPoint);
-      const maxStock = D(p.maxStock);
-      let status: StockStatus = 'OK';
-      if (available.lte(0)) status = 'OUT';
-      else if (reorderPoint.gt(0) && available.lte(reorderPoint)) status = 'LOW';
-      else if (maxStock.gt(0) && onHand.gt(maxStock)) status = 'OVERSTOCK';
-      if (filter && status !== filter) continue;
-      rows.push({
-        productId: p.id,
-        sku: p.sku,
-        name: p.name,
-        onHand: onHand.toString(),
-        available: available.toString(),
-        reorderPoint: reorderPoint.toString(),
-        maxStock: maxStock.toString(),
-        status,
-      });
-    }
-    return rows;
+    filter?: ReorderState,
+  ): Promise<ReorderAssessment[]> {
+    const rows = await this.reorder.assess(organizationId, user);
+    const filtered = filter ? rows.filter((r) => r.state === filter) : rows;
+    const rank: Record<ReorderState, number> = {
+      OUT_OF_STOCK: 0,
+      REORDER_REQUIRED: 1,
+      LOW_STOCK: 2,
+      INBOUND_COVERED: 3,
+      OVERSTOCK: 4,
+      OK: 5,
+    };
+    return filtered.sort(
+      (a, b) => rank[a.state] - rank[b.state] || a.productSku.localeCompare(b.productSku),
+    );
   }
 
   async deadStock(organizationId: string, user: RequestUser, days: number): Promise<DeadStockRow[]> {

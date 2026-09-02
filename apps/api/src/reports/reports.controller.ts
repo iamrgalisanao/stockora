@@ -2,8 +2,9 @@ import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import {
   DeadStockRow,
   PERMISSIONS,
-  StockStatus,
-  StockStatusRow,
+  REORDER_STATES,
+  ReorderAssessment,
+  ReorderState,
   VALUATION_GROUPINGS,
   ValuationGrouping,
   ValuationReport,
@@ -11,8 +12,6 @@ import {
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { ReportsService } from './reports.service';
-
-const STATUSES: StockStatus[] = ['OUT', 'LOW', 'OVERSTOCK', 'OK'];
 
 @Controller('reports')
 export class ReportsController {
@@ -35,14 +34,14 @@ export class ReportsController {
   @Get('stock-status')
   stockStatus(
     @CurrentUser() user: RequestUser,
-    @Query('status') status?: string,
-  ): Promise<StockStatusRow[]> {
-    let filter: StockStatus | undefined;
-    if (status) {
-      if (!STATUSES.includes(status as StockStatus)) {
-        throw new BadRequestException(`status must be one of ${STATUSES.join(', ')}`);
+    @Query('state') state?: string,
+  ): Promise<ReorderAssessment[]> {
+    let filter: ReorderState | undefined;
+    if (state) {
+      if (!REORDER_STATES.includes(state as ReorderState)) {
+        throw new BadRequestException(`state must be one of ${REORDER_STATES.join(', ')}`);
       }
-      filter = status as StockStatus;
+      filter = state as ReorderState;
     }
     return this.reports.stockStatus(user.organizationId, user, filter);
   }

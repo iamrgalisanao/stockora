@@ -269,10 +269,6 @@ export class ProductsService {
     assign('sellingPrice', dto.sellingPrice);
     assign('taxCategory', dto.taxCategory);
     assign('preferredSupplierId', dto.preferredSupplierId);
-    assign('minStock', dto.minStock);
-    assign('maxStock', dto.maxStock);
-    assign('reorderPoint', dto.reorderPoint);
-    assign('reorderQty', dto.reorderQty);
     assign('leadTimeDays', dto.leadTimeDays);
     assign('trackInventory', dto.trackInventory);
     assign('allowNegative', dto.allowNegative);
@@ -306,10 +302,6 @@ export class ProductsService {
       sellingPrice: p.sellingPrice.toString(),
       taxCategory: p.taxCategory,
       preferredSupplierId: p.preferredSupplierId,
-      minStock: p.minStock.toString(),
-      maxStock: p.maxStock.toString(),
-      reorderPoint: p.reorderPoint.toString(),
-      reorderQty: p.reorderQty.toString(),
       leadTimeDays: p.leadTimeDays,
       trackInventory: p.trackInventory,
       allowNegative: p.allowNegative,
