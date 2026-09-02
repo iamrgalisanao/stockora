@@ -66,9 +66,30 @@ export default function ImportsPage() {
   const job = preview?.job;
   const canCommit = job && job.status === 'VALIDATED' && job.invalidRows === 0 && job.validRows > 0;
 
+  async function download(path: string, filename: string) {
+    setError(null);
+    try { await api.exports.download(path, filename); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Export failed'); }
+  }
+
   return (
     <div>
-      <div className="topbar"><h1 className="h1">Import</h1></div>
+      <div className="topbar"><h1 className="h1">Import &amp; Export</h1></div>
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <strong>Export</strong>
+        <div className="muted" style={{ fontSize: 12, margin: '4px 0 10px' }}>Read-only CSV. Exported files re-import as templates.</div>
+        <div className="toolbar" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => download('/exports/products', 'products.csv')}>Products</button>
+          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => download('/exports/suppliers', 'suppliers.csv')}>Suppliers</button>
+          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => download('/exports/stock-balances', 'stock-balances.csv')}>Stock balances</button>
+          <span style={{ flex: 1 }} />
+          <span className="muted" style={{ fontSize: 12, alignSelf: 'center' }}>Blank templates:</span>
+          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => download('/exports/templates/products', 'products-template.csv')}>Products</button>
+          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => download('/exports/templates/suppliers', 'suppliers-template.csv')}>Suppliers</button>
+          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => download('/exports/templates/opening-inventory', 'opening-inventory-template.csv')}>Opening inventory</button>
+        </div>
+      </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="toolbar" style={{ gap: 8 }}>
