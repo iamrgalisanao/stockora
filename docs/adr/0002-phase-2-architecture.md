@@ -61,6 +61,25 @@ LIFO / NearestLocation / PickFaceFirst). FEFO = eligible lots ordered by expiry 
 Reuse `PhysicalCount(type=CYCLE)`; add `CycleCountPolicy` / `CycleCountSchedule` / `CycleCountTask`
 (A=30d, B=90d, C=180d). Manual ABC classes first; value/velocity/variance-driven later.
 
+## Inventory policies & reorder assessment (2A.1C)
+- **`InventoryPolicy`** answers "what stock level should this warehouse maintain for this variant?" —
+  key `(org, warehouse, product, variantId)` (NIL-uuid sentinel = product-level, matching the balance
+  table); fields `minStock`, `maxStock?`, `reorderPoint`, `reorderQuantity`, `preferredSupplierId?`,
+  `status`. **One row per key**; `status` enables/disables it. Validation: `minStock ≥ 0`,
+  `reorderPoint ≥ 0`, `reorderQuantity > 0`; if `maxStock` set then `≥ minStock` and `≥ reorderPoint`.
+  `minStock ≤ reorderPoint` is **not** enforced (independent reporting vs trigger thresholds).
+  It owns **no** purchasing logic (no PO/lead-time/MOQ/pack/pricing/approvals).
+- The product-level reorder fields (min/max/reorderPoint/reorderQty) are **removed** and migrated into
+  policies (one per warehouse where the product has a balance; else the org's default warehouse).
+- **`ReorderAssessmentService`** is the single authoritative calc used by the reorder API, dashboard,
+  and stock-status report: `available = on_hand − reserved − quarantined` (never counts `in_transit`,
+  but surfaces it). Derived state: `OK | LOW_STOCK | REORDER_REQUIRED | INBOUND_COVERED | OVERSTOCK`
+  (OVERSTOCK when maxStock set & on_hand > maxStock; REORDER_REQUIRED when available ≤ reorderPoint and
+  available + in_transit ≤ reorderPoint; INBOUND_COVERED when inbound covers the shortfall; LOW_STOCK
+  when available ≤ minStock but above the reorder trigger). `recommendedQuantity = reorderQuantity`
+  (deterministic; maxStock-topup is a documented future option). Emits a `ReorderAssessment` result
+  object today; events (ReorderRequired/LowStockDetected/…) come with the outbox work.
+
 ## Import / Export (2A, moved earlier)
 `ImportJob` / `ImportRow` / `ImportError`; pipeline **Upload → Parse → Validate → Preview → Resolve →
 Commit → Report**. Never write while parsing; per-row VALID / INVALID / WARNING; jobs idempotent /
