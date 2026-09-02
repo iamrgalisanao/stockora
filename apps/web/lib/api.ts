@@ -7,11 +7,15 @@ import type {
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
+  BarcodeResolutionResult,
+  BarcodeResponse,
+  BarcodeType,
   BrandResponse,
   CategoryResponse,
   EntityStatus,
   UnitConversionResponse,
   UnitResponse,
+  VariantResponse,
   CountListItem,
   CountResponse,
   CountType,
@@ -133,7 +137,7 @@ export const api = {
   me: () => request<AuthenticatedUser>('/auth/me'),
   currentOrganization: () => request<OrganizationResponse>('/organizations/current'),
 
-  products: () => request<ProductResponse[]>('/products'),
+  products: (status?: EntityStatus) => request<ProductResponse[]>(`/products${status ? `?status=${status}` : ''}`),
   warehouses: () => request<WarehouseResponse[]>('/warehouses'),
   suppliers: () => request<SupplierResponse[]>('/suppliers'),
   balances: (params?: { warehouseId?: string; productId?: string }) => {
@@ -259,6 +263,28 @@ export const api = {
   },
   audit: (entityType: string, entityId: string) =>
     request<AuditEntryResponse[]>(`/audit?entityType=${entityType}&entityId=${entityId}`),
+
+  productAdmin: {
+    get: (id: string) => request<ProductResponse>(`/products/${id}`),
+    create: (body: Record<string, unknown>) =>
+      request<ProductResponse>('/products', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Record<string, unknown>) =>
+      request<ProductResponse>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changeStatus: (id: string, status: EntityStatus) =>
+      request<ProductResponse>(`/products/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    addVariant: (id: string, body: { sku: string; attributes?: Record<string, unknown>; cost?: number; sellingPrice?: number }) =>
+      request<VariantResponse>(`/products/${id}/variants`, { method: 'POST', body: JSON.stringify(body) }),
+    changeVariantStatus: (id: string, variantId: string, status: EntityStatus) =>
+      request<VariantResponse>(`/products/${id}/variants/${variantId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    barcodes: (id: string) => request<BarcodeResponse[]>(`/products/${id}/barcodes`),
+    assignBarcode: (id: string, body: { code: string; variantId?: string; barcodeType?: BarcodeType; isPrimary?: boolean }) =>
+      request<BarcodeResponse>(`/products/${id}/barcodes`, { method: 'POST', body: JSON.stringify(body) }),
+    updateBarcode: (id: string, barcodeId: string, body: { isPrimary?: boolean; status?: EntityStatus; barcodeType?: BarcodeType }) =>
+      request<BarcodeResponse>(`/products/${id}/barcodes/${barcodeId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    removeBarcode: (id: string, barcodeId: string) =>
+      request<void>(`/products/${id}/barcodes/${barcodeId}`, { method: 'DELETE' }),
+  },
+  resolve: (code: string) => request<BarcodeResolutionResult>(`/resolve?code=${encodeURIComponent(code)}`),
 };
 
 function catalogQs(q?: string, status?: EntityStatus): string {

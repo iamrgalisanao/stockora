@@ -25,7 +25,6 @@ export class CreateProductDto {
   @MaxLength(200)
   name!: string;
 
-  @IsOptional() @IsString() @MaxLength(64) barcode?: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
   @IsOptional() @IsString() @MaxLength(60) productType?: string;
 
@@ -52,7 +51,6 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() isSerialized?: boolean;
   @IsOptional() @IsBoolean() isBatchTracked?: boolean;
   @IsOptional() @IsBoolean() isExpiryTracked?: boolean;
-  @IsOptional() @IsBoolean() isActive?: boolean;
 
   @IsOptional() @IsString() @MaxLength(500) imageUrl?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
@@ -66,7 +64,6 @@ export class UpdateProductDto {
   sku?: string;
 
   @IsOptional() @IsString() @MinLength(1) @MaxLength(200) name?: string;
-  @IsOptional() @IsString() @MaxLength(64) barcode?: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
   @IsOptional() @IsString() @MaxLength(60) productType?: string;
 
@@ -92,7 +89,6 @@ export class UpdateProductDto {
   @IsOptional() @IsBoolean() isSerialized?: boolean;
   @IsOptional() @IsBoolean() isBatchTracked?: boolean;
   @IsOptional() @IsBoolean() isExpiryTracked?: boolean;
-  @IsOptional() @IsBoolean() isActive?: boolean;
 
   @IsOptional() @IsString() @MaxLength(500) imageUrl?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
@@ -104,18 +100,14 @@ export class CreateVariantDto {
   @MaxLength(64)
   sku!: string;
 
-  @IsOptional() @IsString() @MaxLength(64) barcode?: string;
   @IsOptional() @IsObject() attributes?: Record<string, unknown>;
   @IsOptional() @IsNumber(money) @Min(0) cost?: number;
   @IsOptional() @IsNumber(money) @Min(0) sellingPrice?: number;
-  @IsOptional() @IsBoolean() isActive?: boolean;
 }
 
 export class UpdateVariantDto {
   @IsOptional() @IsString() @Matches(/^[A-Za-z0-9._-]+$/) @MaxLength(64) sku?: string;
-  @IsOptional() @IsString() @MaxLength(64) barcode?: string;
   @IsOptional() @IsObject() attributes?: Record<string, unknown>;
   @IsOptional() @IsNumber(money) @Min(0) cost?: number;
   @IsOptional() @IsNumber(money) @Min(0) sellingPrice?: number;
-  @IsOptional() @IsBoolean() isActive?: boolean;
 }

@@ -20,7 +20,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 
 **Phase 2** ([plan](docs/PHASE-2-PLAN.md) · [ADRs](docs/adr/)): operational readiness → advanced inventory.
 - **2A.1A — Catalog foundations (lifecycle status, master-data UI, audit drawer):** ✅ [docs/PHASE-2A1A-CATALOG-FOUNDATIONS.md](docs/PHASE-2A1A-CATALOG-FOUNDATIONS.md)
-- **Next:** 2A.1B Products + variants (+ barcode resolver), 2A.1C inventory policies, 2A.1D suppliers, 2A.1E warehouses/locations, 2A.1F audit explorer.
+- **2A.1B — Products, variants & barcodes (+ BarcodeResolver, product editor):** ✅ [docs/PHASE-2A1B-PRODUCTS-BARCODES.md](docs/PHASE-2A1B-PRODUCTS-BARCODES.md)
+- **Next:** 2A.1C inventory policies (warehouse-level reorder), 2A.1D suppliers, 2A.1E warehouses/locations, 2A.1F audit explorer.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

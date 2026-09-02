@@ -12,6 +12,7 @@ import { UnitsModule } from './catalog/units/units.module';
 import { BrandsModule } from './catalog/brands/brands.module';
 import { CategoriesModule } from './catalog/categories/categories.module';
 import { ProductsModule } from './catalog/products/products.module';
+import { BarcodeModule } from './catalog/barcode/barcode.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { InventoryModule } from './inventory/inventory.module';
@@ -43,6 +44,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     BrandsModule,
     CategoriesModule,
     ProductsModule,
+    BarcodeModule,
     SuppliersModule,
     WarehousesModule,
     InventoryModule,

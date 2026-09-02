@@ -38,21 +38,42 @@ export interface CategoryResponse {
   status: EntityStatus;
 }
 
+export const BARCODE_TYPES = ['STANDARD', 'INTERNAL'] as const;
+export type BarcodeType = (typeof BARCODE_TYPES)[number];
+
+export interface BarcodeResponse {
+  id: string;
+  code: string;
+  barcodeType: BarcodeType;
+  isPrimary: boolean;
+  status: EntityStatus;
+  variantId: string | null;
+}
+
+/** BarcodeResolver result — identity only, never inventory availability. */
+export interface BarcodeResolutionResult {
+  type: 'PRODUCT' | 'PRODUCT_VARIANT';
+  entityId: string; // the variant id when PRODUCT_VARIANT, else the product id
+  productId: string;
+  variantId: string | null;
+  displayCode: string;
+  status: EntityStatus;
+  metadata: { sku: string; name: string };
+}
+
 export interface VariantResponse {
   id: string;
   productId: string;
   sku: string;
-  barcode: string | null;
   attributes: Record<string, unknown>;
   sellingPrice: string | null;
   cost?: string | null; // gated by cost.view
-  isActive: boolean;
+  status: EntityStatus;
 }
 
 export interface ProductResponse {
   id: string;
   sku: string;
-  barcode: string | null;
   name: string;
   description: string | null;
   productType: string | null;
@@ -84,7 +105,7 @@ export interface ProductResponse {
   isBatchTracked: boolean;
   isExpiryTracked: boolean;
   hasVariants: boolean;
-  isActive: boolean;
+  status: EntityStatus;
 
   imageUrl: string | null;
   notes: string | null;
@@ -92,4 +113,5 @@ export interface ProductResponse {
   updatedAt: string;
 
   variants?: VariantResponse[];
+  barcodes?: BarcodeResponse[];
 }

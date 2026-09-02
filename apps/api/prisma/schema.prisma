@@ -692,7 +692,6 @@ model Product {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   sku            String
-  barcode        String?
   name           String
   description    String?
   productType    String?  @map("product_type")
@@ -724,7 +723,10 @@ model Product {
   isBatchTracked Boolean @default(false) @map("is_batch_tracked")
   isExpiryTracked Boolean @default(false) @map("is_expiry_tracked")
   hasVariants    Boolean @default(false) @map("has_variants")
-  isActive       Boolean @default(true) @map("is_active")
+  status          EntityStatus @default(ACTIVE)
+  statusChangedAt DateTime?    @map("status_changed_at")
+  archivedAt      DateTime?    @map("archived_at")
+  archivedById    String?      @map("archived_by_id") @db.Uuid
 
   imageUrl String?  @map("image_url")
   notes    String?
@@ -747,12 +749,12 @@ model Product {
   transferItems     StockTransferItem[]
   adjustmentItems   StockAdjustmentItem[]
   countItems        StockCountItem[]
+  barcodes          ProductBarcode[]
 
   @@unique([organizationId, sku])
-  @@index([organizationId, barcode])
   @@index([organizationId, categoryId])
   @@index([organizationId, brandId])
-  @@index([organizationId, isActive])
+  @@index([organizationId, status])
   @@map("products")
 }
 
@@ -894,19 +896,49 @@ model ProductVariant {
   organizationId String   @map("organization_id") @db.Uuid
   productId      String   @map("product_id") @db.Uuid
   sku            String
-  barcode        String?
   // e.g. { "size": "M", "color": "Blue" }
   attributes     Json     @default("{}")
   cost           Decimal? @db.Decimal(18, 4)
   sellingPrice   Decimal? @map("selling_price") @db.Decimal(18, 4)
-  isActive       Boolean  @default(true) @map("is_active")
+  status          EntityStatus @default(ACTIVE)
+  statusChangedAt DateTime?    @map("status_changed_at")
+  archivedAt      DateTime?    @map("archived_at")
+  archivedById    String?      @map("archived_by_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
   movements InventoryMovement[]
+  barcodes  ProductBarcode[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, productId])
   @@map("product_variants")
+}
+
+enum BarcodeType {
+  STANDARD
+  INTERNAL
+}
+
+// Catalog/identity barcode alias — NEVER referenced by the ledger. A barcode belongs to a
+// product and, optionally, a specific variant (null = product-level). Code is unique per org.
+model ProductBarcode {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  productId      String       @map("product_id") @db.Uuid
+  variantId      String?      @map("variant_id") @db.Uuid
+  code           String
+  barcodeType    BarcodeType  @default(STANDARD) @map("barcode_type")
+  isPrimary      Boolean      @default(false) @map("is_primary")
+  status         EntityStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, productId])
+  @@map("product_barcodes")
 }
