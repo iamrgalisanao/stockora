@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { ReturnResponse, ReturnStatus, ReturnType, PERMISSIONS } from '@iw/contracts';
+import { QuarantineBreakdownRow, ReturnResponse, ReturnStatus, ReturnType, PERMISSIONS } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { ReturnsService } from './returns.service';
@@ -17,8 +17,26 @@ export class ReturnsController {
     @Query('type') type?: ReturnType,
     @Query('warehouseId') warehouseId?: string,
     @Query('q') q?: string,
+    @Query('sourceReference') sourceReference?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('hasQuarantine') hasQuarantine?: string,
   ): Promise<ReturnResponse[]> {
-    return this.returns.list(user.organizationId, user, { status, type, warehouseId, q });
+    return this.returns.list(user.organizationId, user, {
+      status, type, warehouseId, q, sourceReference, from, to, hasQuarantine: hasQuarantine === 'true',
+    });
+  }
+
+  // Literal route before `:id` so it isn't captured by the param route.
+  @RequirePermissions(PERMISSIONS.RETURN_VIEW)
+  @Get('quarantine-breakdown')
+  quarantineBreakdown(
+    @CurrentUser() user: RequestUser,
+    @Query('productId', ParseUUIDPipe) productId: string,
+    @Query('warehouseId', ParseUUIDPipe) warehouseId: string,
+    @Query('variantId') variantId?: string,
+  ): Promise<QuarantineBreakdownRow[]> {
+    return this.returns.quarantineBreakdown(user.organizationId, user, productId, warehouseId, variantId);
   }
 
   @RequirePermissions(PERMISSIONS.RETURN_VIEW)

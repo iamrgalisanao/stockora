@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { MovementType, Prisma, ReturnStatus } from '@prisma/client';
-import { PERMISSIONS, type DispositionType, type ReturnResponse, type ReturnType } from '@iw/contracts';
+import { PERMISSIONS, type DispositionType, type QuarantineBreakdownRow, type ReturnResponse, type ReturnType } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WarehousesService } from '../warehouses/warehouses.service';
@@ -15,7 +15,14 @@ export interface ReturnListFilter {
   type?: ReturnType;
   warehouseId?: string;
   q?: string; // return number or product sku
+  sourceReference?: string;
+  from?: string;
+  to?: string;
+  hasQuarantine?: boolean; // returns still holding quarantined stock (RECEIVED | PARTIALLY_DISPOSED)
 }
+
+/** Statuses that, by construction, still hold remaining quarantine (received but not fully disposed). */
+const QUARANTINE_HOLDING: ReturnStatus[] = ['RECEIVED', 'PARTIALLY_DISPOSED'];
 
 type ReturnRow = Prisma.InventoryReturnGetPayload<{
   include: {
@@ -57,9 +64,17 @@ export class ReturnsService {
       where: {
         organizationId,
         ...(scope !== null ? { warehouseId: { in: scope } } : {}),
-        ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.status
+          ? { status: filter.status }
+          : filter.hasQuarantine
+            ? { status: { in: QUARANTINE_HOLDING } }
+            : {}),
         ...(filter.type ? { type: filter.type } : {}),
         ...(filter.warehouseId ? { warehouseId: filter.warehouseId } : {}),
+        ...(filter.sourceReference ? { sourceReference: { contains: filter.sourceReference, mode: 'insensitive' } } : {}),
+        ...(filter.from || filter.to
+          ? { createdAt: { ...(filter.from ? { gte: new Date(filter.from) } : {}), ...(filter.to ? { lte: new Date(filter.to) } : {}) } }
+          : {}),
         ...(filter.q
           ? {
               OR: [
@@ -78,6 +93,38 @@ export class ReturnsService {
 
   async get(organizationId: string, user: RequestUser, id: string): Promise<ReturnResponse> {
     return this.toResponse(await this.load(organizationId, user, id));
+  }
+
+  /** The active return lines composing a balance's `quarantined` bucket (stock drill-down). */
+  async quarantineBreakdown(
+    organizationId: string,
+    user: RequestUser,
+    productId: string,
+    warehouseId: string,
+    variantId?: string,
+  ): Promise<QuarantineBreakdownRow[]> {
+    if (user.warehouseScope !== null && !user.warehouseScope.includes(warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
+    const lines = await this.prisma.returnLine.findMany({
+      where: {
+        productId,
+        variantId: variantId ?? NIL_UUID,
+        return: { organizationId, warehouseId, status: { in: QUARANTINE_HOLDING } },
+      },
+      include: { return: { select: { id: true, returnNo: true, type: true, status: true, receivedAt: true } } },
+    });
+    return lines
+      .map((l) => ({
+        returnId: l.return.id,
+        returnNo: l.return.returnNo,
+        lineId: l.id,
+        type: l.return.type,
+        status: l.return.status,
+        remaining: D(l.receivedQuantity).sub(l.disposedQuantity).toString(),
+        receivedAt: l.return.receivedAt ? l.return.receivedAt.toISOString() : null,
+      }))
+      .filter((r) => Number(r.remaining) > 0);
   }
 
   // ---- create (DRAFT) ----
