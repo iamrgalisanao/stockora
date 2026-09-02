@@ -23,7 +23,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **2A.1B — Products, variants & barcodes (+ BarcodeResolver, product editor):** ✅ [docs/PHASE-2A1B-PRODUCTS-BARCODES.md](docs/PHASE-2A1B-PRODUCTS-BARCODES.md)
 - **2A.1C — Inventory policies (warehouse-level reorder engine, single authoritative assessment):** ✅ [docs/PHASE-2A1C-INVENTORY-POLICIES.md](docs/PHASE-2A1C-INVENTORY-POLICIES.md)
 - **2A.1D — Suppliers & supplier catalog (lifecycle, audit, archive guard, editor UI):** ✅ [docs/PHASE-2A1D-SUPPLIERS.md](docs/PHASE-2A1D-SUPPLIERS.md)
-- **Next:** 2A.1E warehouses/locations, 2A.1F audit explorer.
+- **2A.1E — Warehouses & hierarchical locations (lifecycle, archive guards, generic location tree, editor UI):** ✅ [docs/PHASE-2A1E-WAREHOUSES-LOCATIONS.md](docs/PHASE-2A1E-WAREHOUSES-LOCATIONS.md)
+- **Next:** 2A.1F audit explorer.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

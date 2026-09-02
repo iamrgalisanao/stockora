@@ -68,7 +68,7 @@ export class AdjustmentsService {
     user: RequestUser,
     dto: CreateAdjustmentDto,
   ): Promise<AdjustmentResponse> {
-    await this.warehouses.assertAccess(organizationId, user, dto.warehouseId);
+    await this.warehouses.assertSelectableForCreate(organizationId, user, dto.warehouseId);
     await this.ensureProducts(organizationId, dto.items);
     if (dto.reasonId) await this.ensureReason(organizationId, dto.reasonId);
 

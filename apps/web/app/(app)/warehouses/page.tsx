@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { EntityStatus, SupplierResponse } from '@iw/contracts';
+import type { EntityStatus, WarehouseResponse } from '@iw/contracts';
 import { api } from '../../../lib/api';
 import { StatusBadge } from '../../../components/master-data';
 
 const FILTERS: Array<EntityStatus | 'ALL'> = ['ALL', 'ACTIVE', 'INACTIVE', 'ARCHIVED'];
 
-export default function SuppliersPage() {
-  const [rows, setRows] = useState<SupplierResponse[]>([]);
+export default function WarehousesPage() {
+  const [rows, setRows] = useState<WarehouseResponse[]>([]);
   const [filter, setFilter] = useState<EntityStatus | 'ALL'>('ALL');
   const [q, setQ] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export default function SuppliersPage() {
     setLoading(true);
     const t = setTimeout(() => {
       api
-        .suppliers(q.trim() || undefined, filter === 'ALL' ? undefined : filter)
+        .warehouses(q.trim() || undefined, filter === 'ALL' ? undefined : filter)
         .then(setRows)
         .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
         .finally(() => setLoading(false));
@@ -30,8 +30,8 @@ export default function SuppliersPage() {
   return (
     <div>
       <div className="topbar">
-        <h1 className="h1">Suppliers</h1>
-        <Link href="/suppliers/new" className="btn">+ New supplier</Link>
+        <h1 className="h1">Warehouses</h1>
+        <Link href="/warehouses/new" className="btn">+ New warehouse</Link>
       </div>
 
       <div className="toolbar" style={{ marginBottom: 12, gap: 8 }}>
@@ -45,26 +45,24 @@ export default function SuppliersPage() {
       {loading ? (
         <div className="card muted">Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="card muted">No suppliers.</div>
+        <div className="card muted">No warehouses.</div>
       ) : (
         <div className="table-wrap">
           <table className="grid">
             <thead>
               <tr>
-                <th>Code</th><th>Company</th><th>Contact</th><th>Email</th>
-                <th className="num">Lead (d)</th><th>Preferred vendor</th><th>Status</th>
+                <th>Code</th><th>Name</th><th>Type</th><th>Manager</th><th>Default</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => (
-                <tr key={s.id}>
-                  <td><Link href={`/suppliers/${s.id}`}>{s.code}</Link></td>
-                  <td>{s.companyName}</td>
-                  <td>{s.contactPerson ?? '—'}</td>
-                  <td>{s.email ?? '—'}</td>
-                  <td className="num">{s.leadTimeDays}</td>
-                  <td>{s.isPreferred ? '★' : '—'}</td>
-                  <td><StatusBadge status={s.status} /></td>
+              {rows.map((w) => (
+                <tr key={w.id}>
+                  <td><Link href={`/warehouses/${w.id}`}>{w.code}</Link></td>
+                  <td>{w.name}</td>
+                  <td>{w.type}</td>
+                  <td>{w.managerName ?? '—'}</td>
+                  <td>{w.isDefault ? '★' : '—'}</td>
+                  <td><StatusBadge status={w.status} /></td>
                 </tr>
               ))}
             </tbody>

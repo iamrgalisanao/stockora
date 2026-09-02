@@ -7,6 +7,8 @@ export interface InventoryPolicyResponse {
   warehouseCode: string;
   warehouseName: string;
   productId: string;
+  productSku: string;
+  productName: string;
   variantId: string | null;
   minStock: string;
   maxStock: string | null;

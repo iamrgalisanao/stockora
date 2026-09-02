@@ -52,11 +52,41 @@ hidden from operational workflows, history valid, not reactivatable via normal U
 - **`CanArchiveSupplier`** blocks ARCHIVE while the supplier is still relied upon: it is the
   `preferredSupplierId` on any non-archived Product **or** InventoryPolicy, or is referenced by an
   **open goods receipt** (DRAFT/RECEIVING/FOR_INSPECTION/PARTIALLY_RECEIVED). Deactivation is always
-  allowed. `isPreferred` on the supplier is a descriptive "preferred vendor" tag, distinct from the
-  authoritative `preferredSupplierId` links on products/policies.
+  allowed. `Supplier.isPreferred` is a **descriptive classification only** — surfaced in the UI as
+  "Preferred Vendor (strategic classification)" — and must never be read as procurement selection.
+  The **operational source of truth** for which supplier a product/warehouse reorders from is the
+  `preferredSupplierId` link on the Product and the InventoryPolicy; the two concepts are kept
+  deliberately separate so a strategic-vendor label can never silently drive a reorder.
 - **`SupplierProduct`** is the supplier's catalog offer (supplier SKU, negotiated cost, MOQ, lead time);
   cost is gated by `cost.view`. One offer per `(org, supplier, product)`. Archiving a link is
   reversible via status; it is not a hard delete (history-preserving).
+
+## Warehouses & location hierarchy (2A.1E)
+- **`Warehouse` and `WarehouseLocation` are lifecycle-aware** (EntityStatus, replacing the old
+  `WarehouseStatus` enum / `is_active` boolean). Deactivation is permissive; archiving is guarded, and
+  every lifecycle/hierarchy mutation is audited.
+- **`CanArchiveWarehouse`** (the reusable "operational eligibility ≠ existence" pattern from
+  `CanArchiveProduct`) blocks ARCHIVE while ANY stock bucket is non-zero
+  (on_hand/reserved/in_transit/quarantined/damaged — never `on_hand = 0` alone), an open
+  receipt/release/transfer/adjustment/count exists, an ACTIVE inventory policy targets it, or an active
+  child location remains.
+- **`CanArchiveLocation`** blocks ARCHIVE while any inventory movement references the location (its
+  stock/history proxy — balances are not location-scoped yet), an open document line references it, or
+  it has active descendants.
+- **Generic location tree, not a fixed sequence.** A location has `warehouseId`, optional
+  `parentLocationId`, `code`, `name`, free-form structural `type` (ZONE/AISLE/RACK/… — suggested, not
+  enforced), and an operational `usage` classification (STORAGE/RECEIVING/STAGING/QUARANTINE/DAMAGED/
+  DISPATCH/OTHER — validation metadata, **not** a balance bucket). A small warehouse may be one root
+  shelf; a large one, four levels.
+- **Hierarchy invariants:** `code` is unique per `(organization, warehouse)` — the same `BIN-01` may
+  exist in many warehouses. A location belongs to exactly one warehouse; `warehouseId` is **immutable**.
+  Moves reparent **within the same warehouse only** (a dedicated Move action), are cycle-safe
+  (no self-parent, no ancestor cycle), and never cross warehouses — so descendants can never span
+  warehouses even after inventory movements exist.
+- **Historical resolution:** archived/inactive warehouses and locations are excluded from **new**
+  operational selection (`assertSelectableForCreate` / `assertLocationSelectable` gate the create paths
+  of receiving/releases/transfers/adjustments/counts), but they are never deleted and continue to
+  resolve in historical documents, reports, and direct reads.
 
 ## Application-command shape (no formal bus)
 Master-data mutations are expressed as identifiable, testable business actions — `CreateProduct`,

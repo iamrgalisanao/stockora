@@ -19,6 +19,15 @@ export class InventoryPolicyController {
     return this.policies.listForProduct(user.organizationId, user, productId);
   }
 
+  @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
+  @Get('warehouses/:warehouseId/policies')
+  listForWarehouse(
+    @CurrentUser() user: RequestUser,
+    @Param('warehouseId', ParseUUIDPipe) warehouseId: string,
+  ): Promise<InventoryPolicyResponse[]> {
+    return this.policies.listForWarehouse(user.organizationId, user, warehouseId);
+  }
+
   @RequirePermissions(PERMISSIONS.PRODUCT_MANAGE)
   @Post('products/:productId/policies')
   create(

@@ -52,7 +52,7 @@ export class CountsService {
   }
 
   async create(organizationId: string, user: RequestUser, dto: CreateCountDto): Promise<CountResponse> {
-    await this.warehouses.assertAccess(organizationId, user, dto.warehouseId);
+    await this.warehouses.assertSelectableForCreate(organizationId, user, dto.warehouseId);
 
     // Snapshot expected quantities.
     const snapshot: Array<{ productId: string; variantId: string | null; systemQty: Prisma.Decimal; unitCost: Prisma.Decimal }> = [];

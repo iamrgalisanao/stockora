@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
-import { PERMISSIONS, WarehouseLocationResponse, WarehouseResponse } from '@iw/contracts';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { EntityStatus, PERMISSIONS, WarehouseLocationResponse, WarehouseResponse } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
+import { ChangeStatusDto } from '../common/dto/change-status.dto';
 import { WarehousesService } from './warehouses.service';
 import {
   CreateLocationDto,
   CreateWarehouseDto,
+  MoveLocationDto,
   UpdateLocationDto,
   UpdateWarehouseDto,
 } from './dto/warehouse.dto';
@@ -16,8 +18,12 @@ export class WarehousesController {
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
   @Get()
-  list(@CurrentUser() user: RequestUser): Promise<WarehouseResponse[]> {
-    return this.warehouses.list(user.organizationId, user);
+  list(
+    @CurrentUser() user: RequestUser,
+    @Query('q') q?: string,
+    @Query('status') status?: EntityStatus,
+  ): Promise<WarehouseResponse[]> {
+    return this.warehouses.list(user.organizationId, user, { q, status });
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
@@ -35,7 +41,7 @@ export class WarehousesController {
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateWarehouseDto,
   ): Promise<WarehouseResponse> {
-    return this.warehouses.create(user.organizationId, dto);
+    return this.warehouses.create(user.organizationId, dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.WAREHOUSE_MANAGE)
@@ -46,6 +52,16 @@ export class WarehousesController {
     @Body() dto: UpdateWarehouseDto,
   ): Promise<WarehouseResponse> {
     return this.warehouses.update(user.organizationId, user, id, dto);
+  }
+
+  @RequirePermissions(PERMISSIONS.WAREHOUSE_MANAGE)
+  @Post(':id/status')
+  changeStatus(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangeStatusDto,
+  ): Promise<WarehouseResponse> {
+    return this.warehouses.changeStatus(user.organizationId, user, id, dto.status);
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
@@ -76,5 +92,27 @@ export class WarehousesController {
     @Body() dto: UpdateLocationDto,
   ): Promise<WarehouseLocationResponse> {
     return this.warehouses.updateLocation(user.organizationId, user, id, locationId, dto);
+  }
+
+  @RequirePermissions(PERMISSIONS.WAREHOUSE_MANAGE)
+  @Post(':id/locations/:locationId/move')
+  moveLocation(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Body() dto: MoveLocationDto,
+  ): Promise<WarehouseLocationResponse> {
+    return this.warehouses.moveLocation(user.organizationId, user, id, locationId, dto);
+  }
+
+  @RequirePermissions(PERMISSIONS.WAREHOUSE_MANAGE)
+  @Post(':id/locations/:locationId/status')
+  changeLocationStatus(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Body() dto: ChangeStatusDto,
+  ): Promise<WarehouseLocationResponse> {
+    return this.warehouses.changeLocationStatus(user.organizationId, user, id, locationId, dto.status);
   }
 }

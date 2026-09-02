@@ -76,8 +76,8 @@ export class TransfersService {
       throw new BadRequestException('Source and destination warehouses must differ');
     }
     // Creator must have access to both ends.
-    await this.warehouses.assertAccess(organizationId, user, dto.sourceWarehouseId);
-    await this.warehouses.assertAccess(organizationId, user, dto.destWarehouseId);
+    await this.warehouses.assertSelectableForCreate(organizationId, user, dto.sourceWarehouseId);
+    await this.warehouses.assertSelectableForCreate(organizationId, user, dto.destWarehouseId);
     await this.ensureProducts(organizationId, dto.items);
 
     const transferNumber = await this.nextNumber(organizationId);

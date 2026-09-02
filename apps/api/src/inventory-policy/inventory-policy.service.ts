@@ -17,6 +17,7 @@ import { CreatePolicyDto, UpdatePolicyDto } from './dto/policy.dto';
 type PolicyRow = Prisma.InventoryPolicyGetPayload<{
   include: {
     warehouse: { select: { code: true; name: true } };
+    product: { select: { sku: true; name: true } };
     preferredSupplier: { select: { companyName: true } };
   };
 }>;
@@ -39,9 +40,27 @@ export class InventoryPolicyService {
       },
       include: {
         warehouse: { select: { code: true, name: true } },
+        product: { select: { sku: true, name: true } },
         preferredSupplier: { select: { companyName: true } },
       },
       orderBy: [{ warehouse: { code: 'asc' } }, { variantId: 'asc' }],
+    });
+    return rows.map((r) => this.toResponse(r));
+  }
+
+  /** Warehouse-centric read: every policy governing stock in one warehouse (2A.1E editor tab). */
+  async listForWarehouse(organizationId: string, user: RequestUser, warehouseId: string): Promise<InventoryPolicyResponse[]> {
+    if (user.warehouseScope !== null && !user.warehouseScope.includes(warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
+    const rows = await this.prisma.inventoryPolicy.findMany({
+      where: { organizationId, warehouseId },
+      include: {
+        warehouse: { select: { code: true, name: true } },
+        product: { select: { sku: true, name: true } },
+        preferredSupplier: { select: { companyName: true } },
+      },
+      orderBy: [{ product: { sku: 'asc' } }, { variantId: 'asc' }],
     });
     return rows.map((r) => this.toResponse(r));
   }
@@ -78,6 +97,7 @@ export class InventoryPolicyService {
         },
         include: {
           warehouse: { select: { code: true, name: true } },
+          product: { select: { sku: true, name: true } },
           preferredSupplier: { select: { companyName: true } },
         },
       });
@@ -133,6 +153,7 @@ export class InventoryPolicyService {
       },
       include: {
         warehouse: { select: { code: true, name: true } },
+        product: { select: { sku: true, name: true } },
         preferredSupplier: { select: { companyName: true } },
       },
     });
@@ -163,6 +184,7 @@ export class InventoryPolicyService {
       data: { status, statusChangedAt: new Date() },
       include: {
         warehouse: { select: { code: true, name: true } },
+        product: { select: { sku: true, name: true } },
         preferredSupplier: { select: { companyName: true } },
       },
     });
@@ -241,6 +263,7 @@ export class InventoryPolicyService {
       where: { id: policyId, organizationId },
       include: {
         warehouse: { select: { code: true, name: true } },
+        product: { select: { sku: true, name: true } },
         preferredSupplier: { select: { companyName: true } },
       },
     });
@@ -275,6 +298,8 @@ export class InventoryPolicyService {
       warehouseCode: r.warehouse.code,
       warehouseName: r.warehouse.name,
       productId: r.productId,
+      productSku: r.product.sku,
+      productName: r.product.name,
       variantId: r.variantId === NIL_UUID ? null : r.variantId,
       minStock: r.minStock.toString(),
       maxStock: r.maxStock === null ? null : r.maxStock.toString(),

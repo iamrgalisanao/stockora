@@ -40,6 +40,8 @@ import type {
   TransferListItem,
   TransferResponse,
   WarehouseResponse,
+  WarehouseLocationResponse,
+  LocationUsage,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -139,7 +141,7 @@ export const api = {
   currentOrganization: () => request<OrganizationResponse>('/organizations/current'),
 
   products: (status?: EntityStatus) => request<ProductResponse[]>(`/products${status ? `?status=${status}` : ''}`),
-  warehouses: () => request<WarehouseResponse[]>('/warehouses'),
+  warehouses: (q?: string, status?: EntityStatus) => request<WarehouseResponse[]>(`/warehouses${catalogQs(q, status)}`),
   suppliers: (q?: string, status?: EntityStatus) => request<SupplierResponse[]>(`/suppliers${catalogQs(q, status)}`),
   balances: (params?: { warehouseId?: string; productId?: string }) => {
     const q = new URLSearchParams();
@@ -332,6 +334,31 @@ export const api = {
     ) => request<SupplierProductResponse>(`/suppliers/${id}/products/${supplierProductId}`, { method: 'PATCH', body: JSON.stringify(body) }),
     changeProductStatus: (id: string, supplierProductId: string, status: EntityStatus) =>
       request<SupplierProductResponse>(`/suppliers/${id}/products/${supplierProductId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  },
+
+  warehouseAdmin: {
+    get: (id: string) => request<WarehouseResponse>(`/warehouses/${id}`),
+    create: (body: Record<string, unknown>) =>
+      request<WarehouseResponse>('/warehouses', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Record<string, unknown>) =>
+      request<WarehouseResponse>(`/warehouses/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    changeStatus: (id: string, status: EntityStatus) =>
+      request<WarehouseResponse>(`/warehouses/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    locations: (id: string) => request<WarehouseLocationResponse[]>(`/warehouses/${id}/locations`),
+    createLocation: (
+      id: string,
+      body: { code: string; name?: string; type?: string; usage?: LocationUsage; parentId?: string; isPickable?: boolean },
+    ) => request<WarehouseLocationResponse>(`/warehouses/${id}/locations`, { method: 'POST', body: JSON.stringify(body) }),
+    updateLocation: (
+      id: string,
+      locationId: string,
+      body: { name?: string; type?: string; usage?: LocationUsage; isPickable?: boolean },
+    ) => request<WarehouseLocationResponse>(`/warehouses/${id}/locations/${locationId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    moveLocation: (id: string, locationId: string, parentId: string | null) =>
+      request<WarehouseLocationResponse>(`/warehouses/${id}/locations/${locationId}/move`, { method: 'POST', body: JSON.stringify({ parentId }) }),
+    changeLocationStatus: (id: string, locationId: string, status: EntityStatus) =>
+      request<WarehouseLocationResponse>(`/warehouses/${id}/locations/${locationId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    policies: (id: string) => request<InventoryPolicyResponse[]>(`/warehouses/${id}/policies`),
   },
 };
 

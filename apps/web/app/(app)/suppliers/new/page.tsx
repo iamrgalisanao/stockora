@@ -62,8 +62,9 @@ export default function NewSupplierPage() {
         <div style={{ marginTop: 12 }}><label>Address</label><input value={f.address} onChange={(e) => set('address', e.target.value)} placeholder="optional" /></div>
         <div style={{ marginTop: 12 }}><label>Notes</label><input value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder="optional" /></div>
         <div className="toolbar" style={{ marginTop: 12 }}>
-          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" style={{ width: 'auto' }} checked={f.isPreferred} onChange={(e) => set('isPreferred', e.target.checked)} /> Preferred vendor</label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" style={{ width: 'auto' }} checked={f.isPreferred} onChange={(e) => set('isPreferred', e.target.checked)} /> Preferred Vendor (strategic classification)</label>
         </div>
+        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>A descriptive label only — not the operational reorder selection.</div>
         {error && <div className="error">{error}</div>}
         <div className="toolbar" style={{ marginTop: 16 }}>
           <button className="btn" disabled={busy} onClick={save}>{busy ? 'Working…' : 'Create supplier'}</button>
