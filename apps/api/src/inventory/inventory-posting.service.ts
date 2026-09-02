@@ -113,6 +113,24 @@ export class InventoryPostingService {
     );
   }
 
+  /**
+   * Return intake (ADR 0006) — lands returned stock in QUARANTINE. The default RETURN_RECEIPT deltas
+   * raise on_hand AND quarantined by q, so physical stock rises while sellable availability is unchanged.
+   */
+  returnReceipt(
+    ctx: PostContext,
+    input: { warehouseId: string; referenceId?: string; lines: StockLine[] },
+  ): Promise<InventoryMovement[]> {
+    return this.postLines(
+      ctx,
+      MovementType.RETURN_RECEIPT,
+      input.warehouseId,
+      input.lines,
+      'inventory_return',
+      input.referenceId,
+    );
+  }
+
   /** Stock adjustment in/out with a reason. */
   adjustment(
     ctx: PostContext,

@@ -51,8 +51,18 @@ export function bucketDeltasFor(type: MovementType, qty: Dec): BucketDeltas {
       return { ...d, inTransit: qty.neg(), onHand: qty };
 
     case MovementType.CUSTOMER_RETURN:
-      // Returns land in quarantine pending inspection/disposition (Phase 0 §28).
-      return { ...d, quarantined: qty };
+    case MovementType.RETURN_RECEIPT:
+      // Return intake lands in quarantine but IS physically on hand (ADR 0006): on_hand +q and
+      // quarantined +q net to zero availability change, since available = on_hand - reserved - quarantined.
+      return { ...d, onHand: qty, quarantined: qty };
+
+    case MovementType.RETURN_RESTOCK:
+      // Release the quarantine hold; stock stays in the pool and becomes sellable.
+      return { ...d, quarantined: qty.neg() };
+
+    case MovementType.RETURN_DISPOSE:
+      // Scrapped out of the building; clear the hold (on_hand -q, quarantined -q).
+      return { ...d, onHand: qty.neg(), quarantined: qty.neg() };
 
     case MovementType.DAMAGE:
     case MovementType.EXPIRY:
