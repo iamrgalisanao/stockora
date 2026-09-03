@@ -81,3 +81,8 @@ export class ApproveReleaseDto {
 export class RejectReleaseDto {
   @IsString() @MaxLength(500) reason!: string;
 }
+
+export class PostReleaseDto {
+  /** Required when a batch line's lot selection deviates from FEFO under a FEFO policy (ADR 0008 §6). */
+  @IsOptional() @IsString() @MaxLength(500) fefoOverrideReason?: string;
+}

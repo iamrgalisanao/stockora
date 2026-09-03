@@ -7,7 +7,7 @@ import { InventoryPostingService, type StockLine } from '../inventory/inventory-
 import type { RequestUser } from '../common/request-user';
 import { BucketDeltas, D, NIL_UUID, ZERO } from '../inventory/inventory.constants';
 import { DEFAULT_BUSINESS_TZ, daysUntil, expiryStateOf, isExpired, toBusinessDate } from '../common/business-date';
-import { DEFAULT_EXPIRING_SOON_DAYS, type LotExpiryState } from '@iw/contracts';
+import { DEFAULT_EXPIRING_SOON_DAYS, type AllocationPlan, type AllocationStrategy, type LotExpiryState } from '@iw/contracts';
 
 /** A stock line carrying raw lot metadata, resolved to a lotId before posting. */
 export interface LotLineInput {
@@ -282,6 +282,71 @@ export class LotsService {
       documentReference: (m.referenceId && refs.get(m.referenceId)) ?? (m.referenceType ? DOC_LABELS[m.referenceType] ?? null : null),
       actorId: m.performedById,
     }));
+  }
+
+  /** The configured allocation strategy for a product/variant (ADR 0008); MANUAL when no policy is set. */
+  async allocationStrategyFor(organizationId: string, productId: string, variantId = NIL_UUID): Promise<AllocationStrategy> {
+    const policy = await this.prisma.shelfLifePolicy.findUnique({
+      where: { organizationId_productId_variantId: { organizationId, productId, variantId } },
+      select: { allocationStrategy: true },
+    });
+    return policy?.allocationStrategy ?? 'MANUAL';
+  }
+
+  /**
+   * Deterministic FEFO allocation plan (ADR 0008 §4) — pure/read-only. Candidates: ACTIVE, non-expired,
+   * available > 0 at the warehouse; ordered expiryDate ASC (no-expiry last), receivedAt ASC, lotNumber ASC,
+   * id ASC; greedily filled. `complete` is false when eligible stock cannot cover the request (strict mode
+   * is enforced by the caller, not here).
+   */
+  async fefoPlan(
+    organizationId: string, user: RequestUser, productId: string, variantId: string, warehouseId: string, quantity: Prisma.Decimal,
+  ): Promise<AllocationPlan> {
+    if (user.warehouseScope !== null && !user.warehouseScope.includes(warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
+    const lots = await this.prisma.inventoryLot.findMany({
+      where: { organizationId, productId, variantId, status: 'ACTIVE' },
+    });
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: { organizationId, productId, variantId, warehouseId, lotId: { in: lots.map((l) => l.id) } },
+    });
+    const balByLot = new Map(balances.map((b) => [b.lotId, b]));
+    const candidates = lots
+      .map((l) => {
+        const b = balByLot.get(l.id);
+        const available = b ? b.onHand.sub(b.reserved).sub(b.quarantined) : new Prisma.Decimal(0);
+        return { lot: l, available };
+      })
+      .filter((c) => c.available.gt(0) && !isExpired(c.lot.expiryDate, DEFAULT_BUSINESS_TZ))
+      .sort((a, b) => this.fefoOrder(a.lot, b.lot));
+
+    let remaining = quantity;
+    const allocations: AllocationPlan['allocations'] = [];
+    for (const c of candidates) {
+      if (remaining.lte(0)) break;
+      const take = Prisma.Decimal.min(c.available, remaining);
+      if (take.gt(0)) {
+        allocations.push({ lotId: c.lot.id, lotNumber: c.lot.lotNumber, expiryDate: c.lot.expiryDate ? c.lot.expiryDate.toISOString() : null, quantity: take.toString() });
+        remaining = remaining.sub(take);
+      }
+    }
+    const allocated = quantity.sub(remaining);
+    return {
+      requestedQuantity: quantity.toString(), allocatedQuantity: allocated.toString(),
+      complete: remaining.lte(0), strategy: 'FEFO', generatedAt: new Date().toISOString(), allocations,
+    };
+  }
+
+  /** FEFO ordering: expiry ASC (no-expiry last), then receivedAt ASC, lotNumber ASC, id ASC — deterministic. */
+  private fefoOrder(a: { expiryDate: Date | null; receivedAt: Date | null; lotNumber: string; id: string }, b: { expiryDate: Date | null; receivedAt: Date | null; lotNumber: string; id: string }): number {
+    if (a.expiryDate && b.expiryDate) { const d = a.expiryDate.getTime() - b.expiryDate.getTime(); if (d) return d; }
+    else if (a.expiryDate && !b.expiryDate) return -1;
+    else if (!a.expiryDate && b.expiryDate) return 1;
+    const ra = a.receivedAt?.getTime() ?? 0, rb = b.receivedAt?.getTime() ?? 0;
+    if (ra !== rb) return ra - rb;
+    if (a.lotNumber !== b.lotNumber) return a.lotNumber < b.lotNumber ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   }
 
   /** ACTIVE lots of a product selectable at a warehouse, with that warehouse's buckets (the picker feed). */
