@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma, MovementType, InventoryMovement } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CostingService, type FifoAllocation } from './costing.service';
 import {
   BucketDeltas,
   D,
@@ -68,7 +69,10 @@ const round4 = (d: Dec): Dec => d.toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_U
 
 @Injectable()
 export class InventoryPostingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly costing: CostingService,
+  ) {}
 
   // -------------------------------------------------------------------------
   // Public commands (each is one atomic, idempotent transaction)
@@ -476,8 +480,23 @@ export class InventoryPostingService {
       }
     }
 
-    // Costing (moving weighted average).
-    const { unitCost, totalCost, newAvg } = this.computeCost(bal, deltas.onHand, spec.unitCost ?? null);
+    // Costing. WAC (moving weighted average) is always computed and keeps `avgCost` maintained. Under a FIFO
+    // strategy, an outbound release is instead valued by consuming cost layers oldest-first (ADR 0013 §4).
+    const wac = this.computeCost(bal, deltas.onHand, spec.unitCost ?? null);
+    let unitCost = wac.unitCost;
+    let totalCost = wac.totalCost;
+    const newAvg = wac.newAvg;
+
+    const strategy = await this.costing.strategyFor(tx, ctx.organizationId, spec.productId);
+    let fifoAllocations: FifoAllocation[] | null = null;
+    if (strategy === 'FIFO' && this.costing.consumesLayer(spec.movementType) && deltas.onHand.lt(0)) {
+      const cogs = await this.costing.consumeFifoInTx(tx, ctx.organizationId, {
+        productId: spec.productId, variantKey, warehouseId: spec.warehouseId, quantity: deltas.onHand.abs(),
+      });
+      unitCost = cogs.unitCost;
+      totalCost = cogs.totalCost;
+      fifoAllocations = cogs.allocations;
+    }
 
     await tx.inventoryBalance.update({
       where: { id: bal.id },
@@ -494,7 +513,7 @@ export class InventoryPostingService {
 
     const txnNumber = await this.nextNumber(tx, ctx.organizationId, 'movement', 'MV');
 
-    return tx.inventoryMovement.create({
+    const movement = await tx.inventoryMovement.create({
       data: {
         organizationId: ctx.organizationId,
         txnNumber,
@@ -521,6 +540,19 @@ export class InventoryPostingService {
         reason: spec.reason ?? null,
       },
     });
+
+    // FIFO valuation state (ADR 0013): open a layer for an inflow, or record the consumed layers for an outflow.
+    if (strategy === 'FIFO') {
+      if (this.costing.opensLayer(spec.movementType) && deltas.onHand.gt(0)) {
+        await this.costing.openLayerInTx(tx, ctx.organizationId, {
+          productId: spec.productId, variantKey, warehouseId: spec.warehouseId, sourceMovementId: movement.id,
+          quantity: deltas.onHand, unitCost, receivedAt: movement.postedAt,
+        });
+      } else if (fifoAllocations) {
+        await this.costing.recordConsumptionsInTx(tx, ctx.organizationId, movement.id, fifoAllocations);
+      }
+    }
+    return movement;
   }
 
   private computeCost(

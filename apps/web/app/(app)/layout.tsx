@@ -28,6 +28,7 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/adjustments', label: 'Adjustments' },
       { href: '/counts', label: 'Physical Counts' },
       { href: '/cycle-count', label: 'Cycle Counts' },
+      { href: '/inventory/costing', label: 'Costing' },
     ],
   },
   {

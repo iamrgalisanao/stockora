@@ -9,9 +9,14 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { MovementType } from '@prisma/client';
+import { CostLayerStatus, MovementType } from '@prisma/client';
 import {
   BalanceResponse,
+  type CostLayerConsumptionResponse,
+  type CostLayerResponse,
+  type CostValuationRow,
+  type CostingPolicyResponse,
+  type CostingStrategy,
   InventoryPositionRow,
   MovementResponse,
   PERMISSIONS,
@@ -24,16 +29,60 @@ import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { InventoryPostingService } from './inventory-posting.service';
 import { InventoryQueryService } from './inventory-query.service';
+import { CostingService } from './costing.service';
 import { LotsService } from '../lots/lots.service';
 import { OpeningBalanceDto, ReverseMovementDto } from './dto/opening-balance.dto';
+import { CostingPolicyDto } from './dto/costing-policy.dto';
 
 @Controller('inventory')
 export class InventoryController {
   constructor(
     private readonly posting: InventoryPostingService,
     private readonly query: InventoryQueryService,
+    private readonly costing: CostingService,
     private readonly lots: LotsService,
   ) {}
+
+  // ---- FIFO costing (2D.5A, ADR 0013) — cost figures are cost.view-gated ----
+
+  @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
+  @Get('costing-policy')
+  costingPolicy(@CurrentUser() user: RequestUser, @Query('productId') productId?: string): Promise<CostingPolicyResponse> {
+    return this.costing.getPolicy(user.organizationId, productId);
+  }
+
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @Post('costing-policy')
+  setCostingPolicy(@CurrentUser() user: RequestUser, @Body() dto: CostingPolicyDto): Promise<CostingPolicyResponse> {
+    return this.costing.upsertPolicy(user.organizationId, dto.strategy as CostingStrategy, dto.productId);
+  }
+
+  @RequirePermissions(PERMISSIONS.COST_VIEW)
+  @Get('cost-layers')
+  costLayers(
+    @CurrentUser() user: RequestUser,
+    @Query('productId') productId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('status') status?: CostLayerStatus,
+  ): Promise<CostLayerResponse[]> {
+    return this.costing.listLayers(user.organizationId, user, { productId, warehouseId, status });
+  }
+
+  @RequirePermissions(PERMISSIONS.VALUATION_VIEW)
+  @Get('cost-valuation')
+  costValuation(
+    @CurrentUser() user: RequestUser,
+    @Query('productId') productId?: string,
+    @Query('warehouseId') warehouseId?: string,
+  ): Promise<CostValuationRow[]> {
+    return this.costing.valuation(user.organizationId, user, { productId, warehouseId });
+  }
+
+  @RequirePermissions(PERMISSIONS.COST_VIEW)
+  @Get('movements/:id/cost-layers')
+  movementConsumptions(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<CostLayerConsumptionResponse[]> {
+    return this.costing.consumptionsForMovement(user.organizationId, id);
+  }
 
   // ---- queries ----
 
