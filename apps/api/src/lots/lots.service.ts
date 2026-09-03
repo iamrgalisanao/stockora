@@ -6,6 +6,8 @@ import { AuditService } from '../audit/audit.service';
 import { InventoryPostingService, type StockLine } from '../inventory/inventory-posting.service';
 import type { RequestUser } from '../common/request-user';
 import { BucketDeltas, D, NIL_UUID, ZERO } from '../inventory/inventory.constants';
+import { DEFAULT_BUSINESS_TZ, daysUntil, expiryStateOf, isExpired, toBusinessDate } from '../common/business-date';
+import { DEFAULT_EXPIRING_SOON_DAYS, type LotExpiryState } from '@iw/contracts';
 
 /** A stock line carrying raw lot metadata, resolved to a lotId before posting. */
 export interface LotLineInput {
@@ -18,6 +20,7 @@ export interface LotLineInput {
   manufacturedAt?: string;
   expiryDate?: string;
   supplierId?: string;
+  allowShortShelfLife?: boolean;
 }
 
 export interface ResolveLotInput {
@@ -25,6 +28,7 @@ export interface ResolveLotInput {
   manufacturedAt?: string | null;
   expiryDate?: string | null;
   supplierId?: string | null;
+  allowShortShelfLife?: boolean;
 }
 
 export interface LotListFilter {
@@ -34,6 +38,7 @@ export interface LotListFilter {
   warehouseId?: string; // lots with a balance row in this warehouse
   supplierId?: string;
   hasStock?: boolean; // lots with non-zero on-hand somewhere in scope
+  expiryState?: LotExpiryState; // derived filter (EXPIRED / EXPIRING_SOON / HEALTHY / NO_EXPIRY)
 }
 
 /** referenceType → the model + human-number column used to resolve a movement's source document. */
@@ -100,8 +105,13 @@ export class LotsService {
       if (input.expiryDate && !sameInstant(existing.expiryDate, input.expiryDate)) {
         throw new ConflictException(`Lot ${lotNumber} already exists with a different expiry date`);
       }
-      return existing.id;
     }
+
+    // Shelf-life policy enforcement at stock entry (ADR 0008): expiry-required + minimum shelf life.
+    const effectiveExpiry = existing ? existing.expiryDate : (input.expiryDate ? new Date(input.expiryDate) : null);
+    await this.enforceShelfLifeAtEntry(organizationId, actorId, productId, variantId, lotNumber, effectiveExpiry, input.allowShortShelfLife ?? false);
+
+    if (existing) return existing.id;
 
     const created = await this.prisma.inventoryLot.create({
       data: {
@@ -117,6 +127,44 @@ export class LotsService {
       entityId: created.id, entityDisplay: lotNumber, newValue: { productId, origin },
     });
     return created.id;
+  }
+
+  /** Fetch (org,product,variant) shelf-life policy fields, falling back to the product's expiry flag. */
+  private async shelfLife(organizationId: string, productId: string, variantId: string) {
+    const policy = await this.prisma.shelfLifePolicy.findUnique({
+      where: { organizationId_productId_variantId: { organizationId, productId, variantId } },
+    });
+    if (policy) {
+      return {
+        expiryRequired: policy.expiryTrackingRequired,
+        minDays: policy.minimumShelfLifeOnReceiptDays,
+        expiringSoonDays: policy.expiringSoonDays ?? DEFAULT_EXPIRING_SOON_DAYS,
+      };
+    }
+    const product = await this.prisma.product.findFirst({ where: { id: productId, organizationId }, select: { isExpiryTracked: true } });
+    return { expiryRequired: product?.isExpiryTracked ?? false, minDays: null as number | null, expiringSoonDays: DEFAULT_EXPIRING_SOON_DAYS };
+  }
+
+  private async enforceShelfLifeAtEntry(
+    organizationId: string, actorId: string | null, productId: string, variantId: string,
+    lotNumber: string, effectiveExpiry: Date | null, allowShortShelfLife: boolean,
+  ): Promise<void> {
+    const { expiryRequired, minDays } = await this.shelfLife(organizationId, productId, variantId);
+    if (expiryRequired && !effectiveExpiry) {
+      throw new BadRequestException('This product requires an expiry date to receive stock');
+    }
+    if (minDays != null && effectiveExpiry) {
+      const remaining = daysUntil(toBusinessDate(effectiveExpiry, DEFAULT_BUSINESS_TZ), DEFAULT_BUSINESS_TZ);
+      if (remaining < minDays) {
+        if (!allowShortShelfLife) {
+          throw new BadRequestException(`Lot has ${remaining} day(s) of shelf life; minimum on receipt is ${minDays}`);
+        }
+        await this.audit.record({
+          organizationId, userId: actorId, action: 'lot.short_shelf_life_override', entityType: 'lot',
+          entityDisplay: lotNumber, newValue: { remainingDays: remaining, minimumDays: minDays },
+        });
+      }
+    }
   }
 
   /** Resolve a batch of entry lines (opening inventory / any find-or-create entry) to posting StockLines. */
@@ -184,7 +232,8 @@ export class LotsService {
         if (filter.hasStock && !(totals.get(l.id)?.onHand && !totals.get(l.id)!.onHand!.equals(0))) return false;
         return true;
       })
-      .map((l) => this.toResponse(l, totals.get(l.id)));
+      .map((l) => this.toResponse(l, totals.get(l.id)))
+      .filter((r) => !filter.expiryState || r.expiryState === filter.expiryState);
   }
 
   /** The chronological ledger timeline for a lot, with each movement's source document resolved. */
@@ -257,11 +306,15 @@ export class LotsService {
         return {
           lotId: l.id, lotNumber: l.lotNumber, status: l.status, origin: l.origin,
           expiryDate: l.expiryDate ? l.expiryDate.toISOString() : null,
+          expiryState: expiryStateOf(l.expiryDate, DEFAULT_EXPIRING_SOON_DAYS, DEFAULT_BUSINESS_TZ),
           onHand: onHand.toString(), reserved: reserved.toString(), quarantined: quarantined.toString(),
           available: onHand.sub(reserved).sub(quarantined).toString(),
+          _expiry: l.expiryDate,
         };
       })
-      .filter((l) => Number(l.onHand) > 0); // only lots with stock at this warehouse are pickable
+      // Only lots with stock at this warehouse that are NOT expired are pickable (ADR 0008 §2).
+      .filter((l) => Number(l.onHand) > 0 && !isExpired(l._expiry, DEFAULT_BUSINESS_TZ))
+      .map(({ _expiry, ...l }) => l);
   }
 
   async get(organizationId: string, user: RequestUser, id: string): Promise<LotResponse> {
@@ -395,6 +448,7 @@ export class LotsService {
       supplierId: l.supplierId,
       status: l.status,
       origin: l.origin,
+      expiryState: expiryStateOf(l.expiryDate, DEFAULT_EXPIRING_SOON_DAYS, DEFAULT_BUSINESS_TZ),
       createdAt: l.createdAt.toISOString(),
       onHand: t(totals?.onHand),
       reserved: t(totals?.reserved),

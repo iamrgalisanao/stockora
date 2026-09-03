@@ -20,3 +20,4 @@ export * from './imports';
 export * from './reservations';
 export * from './returns';
 export * from './lots';
+export * from './shelf-life';

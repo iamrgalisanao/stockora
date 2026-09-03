@@ -4,6 +4,8 @@
  * ledger and sum to the product/warehouse totals.
  */
 
+import type { LotExpiryState } from './shelf-life';
+
 export const LOT_STATUSES = ['ACTIVE', 'CLOSED', 'ARCHIVED'] as const;
 export type LotStatus = (typeof LOT_STATUSES)[number];
 
@@ -47,6 +49,7 @@ export interface PickableLot {
   status: LotStatus;
   origin: LotOrigin;
   expiryDate: string | null;
+  expiryState: LotExpiryState; // derived (ADR 0008 §9)
   onHand: string;
   reserved: string;
   quarantined: string;
@@ -66,6 +69,7 @@ export interface LotResponse {
   supplierId: string | null;
   status: LotStatus;
   origin: LotOrigin;
+  expiryState: LotExpiryState; // derived (ADR 0008 §9)
   createdAt: string;
   // Totals summed across all warehouses (the lot's global physical position).
   onHand: string;

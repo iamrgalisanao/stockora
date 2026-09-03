@@ -8,6 +8,7 @@ import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService, type StockLine } from '../inventory/inventory-posting.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { NIL_UUID } from '../inventory/inventory.constants';
+import { DEFAULT_BUSINESS_TZ, isExpired } from '../common/business-date';
 import {
   ApproveReleaseDto,
   CreateReleaseDto,
@@ -247,6 +248,19 @@ export class ReleasesService {
         if (!allocSum.equals(q)) throw new BadRequestException(`Lot allocations for ${i.product.sku} must sum to the approved quantity`);
       } else if (i.allocations.length > 0) {
         throw new BadRequestException(`Line for ${i.product.sku} is not batch-tracked and cannot carry lot allocations`);
+      }
+    }
+
+    // Expired lots cannot enter normal outbound allocation (ADR 0008 §2). Physical stock is untouched.
+    const allocLotIds = [...new Set(approved.flatMap((i) => i.allocations.map((a) => a.lotId)))];
+    if (allocLotIds.length > 0) {
+      const allocLots = await this.prisma.inventoryLot.findMany({
+        where: { organizationId, id: { in: allocLotIds } }, select: { id: true, lotNumber: true, expiryDate: true },
+      });
+      for (const lot of allocLots) {
+        if (isExpired(lot.expiryDate, DEFAULT_BUSINESS_TZ)) {
+          throw new BadRequestException(`Lot ${lot.lotNumber} is expired and cannot be released`);
+        }
       }
     }
 

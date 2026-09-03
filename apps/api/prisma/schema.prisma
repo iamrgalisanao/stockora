@@ -903,6 +903,7 @@ model Product {
   reservationLines  ReservationLine[]
   returnLines       ReturnLine[]
   lots              InventoryLot[]
+  shelfLifePolicies ShelfLifePolicy[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, categoryId])
@@ -1165,6 +1166,33 @@ model InventoryLot {
   @@index([organizationId, productId, variantId])
   @@index([organizationId, expiryDate])
   @@map("inventory_lots")
+}
+
+enum AllocationStrategy {
+  MANUAL
+  FEFO
+}
+
+/// Per-product shelf-life + allocation policy (2C.2, ADR 0008). Expiry expectations are policy, not
+/// hardcoded — not every batch-tracked product requires expiry. Absence of a row = no expiry requirement,
+/// MANUAL allocation. variantId uses the NIL-UUID sentinel for base product.
+model ShelfLifePolicy {
+  id                          String             @id @default(uuid()) @db.Uuid
+  organizationId              String             @map("organization_id") @db.Uuid
+  productId                   String             @map("product_id") @db.Uuid
+  variantId                   String             @map("variant_id") @db.Uuid
+  expiryTrackingRequired      Boolean            @default(false) @map("expiry_tracking_required")
+  minimumShelfLifeOnReceiptDays Int?             @map("minimum_shelf_life_on_receipt_days")
+  expiringSoonDays            Int?               @map("expiring_soon_days")
+  allocationStrategy          AllocationStrategy @default(MANUAL) @map("allocation_strategy")
+  createdAt                   DateTime           @default(now()) @map("created_at")
+  updatedAt                   DateTime           @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId, variantId])
+  @@index([organizationId, productId])
+  @@map("shelf_life_policies")
 }
 
 model WarehouseLocation {

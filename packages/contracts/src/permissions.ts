@@ -58,6 +58,10 @@ export const PERMISSIONS = {
   RETURN_RECEIVE: 'return.receive',
   RETURN_INSPECT: 'return.inspect',
   RETURN_DISPOSE: 'return.dispose',
+
+  // Expiry / FEFO (2C.2) — override guards for short-dated receipts and non-FEFO manual allocation
+  INVENTORY_EXPIRY_OVERRIDE: 'inventory.expiry_override',
+  INVENTORY_FEFO_OVERRIDE: 'inventory.fefo_override',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -108,4 +112,6 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { code: PERMISSIONS.RETURN_RECEIVE, description: 'Receive returned stock into quarantine' },
   { code: PERMISSIONS.RETURN_INSPECT, description: 'Inspect quarantined returns and restock' },
   { code: PERMISSIONS.RETURN_DISPOSE, description: 'Dispose returns (damaged / return-to-supplier / dispose)' },
+  { code: PERMISSIONS.INVENTORY_EXPIRY_OVERRIDE, description: 'Accept a short-dated receipt below minimum shelf life' },
+  { code: PERMISSIONS.INVENTORY_FEFO_OVERRIDE, description: 'Override FEFO allocation with a manual lot selection' },
 ];
