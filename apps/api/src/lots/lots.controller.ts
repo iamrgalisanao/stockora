@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { LotMovementRow, LotResponse, PickableLot, PERMISSIONS } from '@iw/contracts';
+import { LotExpiryState, LotMovementRow, LotResponse, PickableLot, PERMISSIONS } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { LotsService } from './lots.service';
@@ -18,8 +18,9 @@ export class LotsController {
     @Query('warehouseId') warehouseId?: string,
     @Query('supplierId') supplierId?: string,
     @Query('hasStock') hasStock?: string,
+    @Query('expiryState') expiryState?: LotExpiryState,
   ): Promise<LotResponse[]> {
-    return this.lots.list(user.organizationId, user, { productId, status, q, warehouseId, supplierId, hasStock: hasStock === 'true' });
+    return this.lots.list(user.organizationId, user, { productId, status, q, warehouseId, supplierId, hasStock: hasStock === 'true', expiryState });
   }
 
   // Literal routes before `:id`.

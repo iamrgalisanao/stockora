@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Headers,
   Param,
@@ -81,8 +82,12 @@ export class InventoryController {
     @Body() dto: OpeningBalanceDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<MovementResponse[]> {
+    // A short-shelf-life override on any line requires the expiry-override permission (ADR 0008).
+    if (dto.lines.some((l) => l.allowShortShelfLife) && !user.permissions.includes(PERMISSIONS.INVENTORY_EXPIRY_OVERRIDE)) {
+      throw new ForbiddenException('inventory.expiry_override is required to accept a short-dated lot');
+    }
     // Resolve lot metadata → lotId per line (ADR 0007) before posting; the posting layer then enforces
-    // the batch-tracked ⟺ lot invariant.
+    // the batch-tracked ⟺ lot invariant, and lot resolution enforces shelf-life policy (ADR 0008).
     const lines = await this.lots.resolveEntryLines(user.organizationId, user.userId, dto.lines, 'OPENING');
     const movements = await this.posting.openingBalance(
       { organizationId: user.organizationId, actorId: user.userId, idempotencyKey, reason: dto.reason },

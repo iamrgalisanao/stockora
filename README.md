@@ -48,7 +48,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2C.1A — Lot Core + Receiving (InventoryLot entity + uniqueness/lifecycle/immutability; balance & ledger lot grain; posting-time enforcement; opening + receiving lot capture; legacy backfill; lot query API):** ✅ [docs/PHASE-2C1A-LOT-CORE.md](docs/PHASE-2C1A-LOT-CORE.md)
   - **2C.1B — Lot Propagation (releases with lot allocations [the FEFO seam]; transfers preserve lot identity; adjustments/counts/returns lot-aware; reservations aggregate availability across lots):** ✅ [docs/PHASE-2C1B-LOT-PROPAGATION.md](docs/PHASE-2C1B-LOT-PROPAGATION.md)
   - **2C.1C — Traceability UX (lot explorer, lot detail with per-warehouse stock + movement timeline & document links, shared operational lot picker):** ✅ [docs/PHASE-2C1C-TRACEABILITY-UX.md](docs/PHASE-2C1C-TRACEABILITY-UX.md)
-  - **Next:** 2C.2 Expiry + FEFO.
+- **2C.2 — Expiry + FEFO** (shelf-life rules + first-expired-first-out allocation; [ADR 0008](docs/adr/0008-expiry-fefo.md)):
+  - **2C.2A — Expiry Policy + Eligibility (ShelfLifePolicy; business-date expiry; receiving validation + audited short-dated override; expired/expiring read model; release + picker exclude expired lots):** ✅ [docs/PHASE-2C2A-EXPIRY-POLICY.md](docs/PHASE-2C2A-EXPIRY-POLICY.md)
+  - **Next:** 2C.2B FEFO Allocation.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

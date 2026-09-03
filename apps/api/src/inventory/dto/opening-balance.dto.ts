@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsNumber,
   IsOptional,
@@ -24,6 +25,8 @@ export class OpeningBalanceLineDto {
   @IsOptional() @IsDateString() manufacturedAt?: string;
   @IsOptional() @IsDateString() expiryDate?: string;
   @IsOptional() @IsUUID() supplierId?: string;
+  // Accept a lot below the product's minimum shelf life (ADR 0008) — requires inventory.expiry_override.
+  @IsOptional() @IsBoolean() allowShortShelfLife?: boolean;
 }
 
 export class OpeningBalanceDto {
