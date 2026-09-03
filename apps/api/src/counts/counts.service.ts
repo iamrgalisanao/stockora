@@ -283,7 +283,8 @@ export class CountsService {
           payload: {
             cycleCountTaskId: task.id, stockCountId: count.id, warehouseId: count.warehouseId,
             productId: item?.productId ?? null, variantId: item?.variantId ?? null, lotId: item?.lotId ?? null,
-            abcClass: task.abcClass, expectedQuantity: expected.toString(), countedQuantity: counted.toString(),
+            abcClass: task.abcClass, assignedToId: task.assignedToId ?? null,
+            expectedQuantity: expected.toString(), countedQuantity: counted.toString(),
             varianceQuantity: variance.toString(), completedAt: task.completedAt ? task.completedAt.toISOString() : null,
           },
         });

@@ -38,6 +38,7 @@ import { ShelfLifeModule } from './shelf-life/shelf-life.module';
 import { CycleCountModule } from './cycle-count/cycle-count.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { ProjectionsModule } from './projections/projections.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -81,6 +82,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     CycleCountModule,
     OutboxModule,
     ProjectionsModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [

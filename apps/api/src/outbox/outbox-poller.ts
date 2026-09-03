@@ -15,8 +15,9 @@ export class OutboxPoller implements OnApplicationBootstrap, OnModuleDestroy {
   constructor(private readonly relay: OutboxRelayService) {}
 
   onApplicationBootstrap(): void {
-    // Off explicitly, or under tests — background timers must never mutate shared state during e2e.
-    if (process.env.OUTBOX_POLLER === 'off' || process.env.NODE_ENV === 'test') {
+    // Off explicitly, or under any test runner — a background timer must never mutate shared state during
+    // e2e (JEST_WORKER_ID is set in every Jest worker; NODE_ENV=test is a belt-and-suspenders guard).
+    if (process.env.OUTBOX_POLLER === 'off' || process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) {
       this.logger.log('outbox poller disabled');
       return;
     }

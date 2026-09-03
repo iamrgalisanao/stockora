@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api, clearToken, getToken } from '../../lib/api';
 
 const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> }> = [
-  { group: 'Overview', links: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/search', label: 'Search' }, { href: '/scan', label: 'Scan' }, { href: '/inventory', label: 'Stock Overview' }, { href: '/inventory/position', label: 'Inventory Position' }] },
+  { group: 'Overview', links: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/notifications', label: 'Notifications' }, { href: '/search', label: 'Search' }, { href: '/scan', label: 'Scan' }, { href: '/inventory', label: 'Stock Overview' }, { href: '/inventory/position', label: 'Inventory Position' }] },
   { group: 'Catalog', links: [{ href: '/products', label: 'Products' }, { href: '/suppliers', label: 'Suppliers' }] },
   {
     group: 'Warehouse',
