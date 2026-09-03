@@ -29,6 +29,8 @@ export default function NewReceiptPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [poRef, setPoRef] = useState('');
+  const [orderDate, setOrderDate] = useState('');
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const [busy, setBusy] = useState(false);
@@ -83,6 +85,8 @@ export default function NewReceiptPage() {
       warehouseId,
       supplierId: supplierId || undefined,
       purchaseOrderRef: poRef || undefined,
+      orderDate: orderDate ? new Date(orderDate).toISOString() : undefined,
+      expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate).toISOString() : undefined,
       notes: notes || undefined,
       items,
     };
@@ -138,6 +142,17 @@ export default function NewReceiptPage() {
             <label>PO reference</label>
             <input value={poRef} onChange={(e) => setPoRef(e.target.value)} placeholder="optional" />
           </div>
+          <div>
+            <label>Order date</label>
+            <input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+          </div>
+          <div>
+            <label>Expected delivery</label>
+            <input type="date" value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} />
+          </div>
+        </div>
+        <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+          Order &amp; expected-delivery dates are optional — they power supplier lead-time and on-time analytics.
         </div>
 
         <div style={{ marginTop: 18 }}>

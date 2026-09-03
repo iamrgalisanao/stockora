@@ -39,6 +39,8 @@ export interface ReceiptResponse {
   deliveryReceiptRef: string | null;
   supplierInvoiceRef: string | null;
   receivingDate: string;
+  orderDate: string | null;
+  expectedDeliveryDate: string | null;
   status: ReceiptStatus;
   notes: string | null;
   postedAt: string | null;

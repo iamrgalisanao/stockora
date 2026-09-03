@@ -21,7 +21,7 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/serials', label: 'Serials' },
     ],
   },
-  { group: 'Supply', links: [{ href: '/reorder', label: 'Reorder' }] },
+  { group: 'Supply', links: [{ href: '/reorder', label: 'Reorder' }, { href: '/suppliers/performance', label: 'Supplier Analytics' }] },
   {
     group: 'Control',
     links: [

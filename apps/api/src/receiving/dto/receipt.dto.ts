@@ -46,6 +46,9 @@ export class CreateReceiptDto {
   @IsOptional() @IsString() @MaxLength(60) deliveryReceiptRef?: string;
   @IsOptional() @IsString() @MaxLength(60) supplierInvoiceRef?: string;
   @IsOptional() @IsDateString() receivingDate?: string;
+  /** Supplier-analytics capture (2D.4) — optional; enables lead-time and on-time metrics where recorded. */
+  @IsOptional() @IsDateString() orderDate?: string;
+  @IsOptional() @IsDateString() expectedDeliveryDate?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 
   @IsArray()
@@ -61,6 +64,8 @@ export class UpdateReceiptDto {
   @IsOptional() @IsString() @MaxLength(60) deliveryReceiptRef?: string;
   @IsOptional() @IsString() @MaxLength(60) supplierInvoiceRef?: string;
   @IsOptional() @IsDateString() receivingDate?: string;
+  @IsOptional() @IsDateString() orderDate?: string;
+  @IsOptional() @IsDateString() expectedDeliveryDate?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 
   @IsOptional()

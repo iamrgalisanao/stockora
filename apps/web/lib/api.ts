@@ -77,6 +77,7 @@ import type {
   SerialTrackingPolicyResponse,
   SerialReconciliationResult,
   SerialHistoryResponse,
+  SupplierPerformanceResponse,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -108,6 +109,8 @@ export interface CreateReceiptBody {
   supplierId?: string;
   warehouseId: string;
   purchaseOrderRef?: string;
+  orderDate?: string;
+  expectedDeliveryDate?: string;
   notes?: string;
   items: Array<{
     productId: string;
@@ -254,6 +257,12 @@ export const api = {
     if (params?.productId) q.set('productId', params.productId);
     const qs = q.toString();
     return request<BalanceResponse[]>(`/inventory/balances${qs ? `?${qs}` : ''}`);
+  },
+  supplierPerformance: (filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<SupplierPerformanceResponse>(`/analytics/suppliers${qs ? `?${qs}` : ''}`);
   },
   positions: (filters: Record<string, string> = {}) => {
     const q = new URLSearchParams();
