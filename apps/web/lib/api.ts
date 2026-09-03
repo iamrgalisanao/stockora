@@ -65,6 +65,8 @@ import type {
   ProductClassificationRow,
   MembershipUserResponse,
   InventoryPositionRow,
+  OutboxHealthResponse,
+  OutboxEventListItem,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -352,6 +354,12 @@ export const api = {
   },
 
   members: () => request<MembershipUserResponse[]>('/users'),
+
+  outbox: {
+    health: () => request<OutboxHealthResponse>('/outbox/health'),
+    events: (limit = 50) => request<OutboxEventListItem[]>(`/outbox/events?limit=${limit}`),
+    retry: (id: string) => request<{ ok: true }>(`/outbox/${id}/retry`, { method: 'POST' }),
+  },
 
   dashboard: () => request<DashboardSummary>('/dashboard/summary'),
   reorder: () => request<ReorderAssessment[]>('/reorder/recommendations'),

@@ -36,6 +36,21 @@ export interface OutboxHealthResponse {
   expiredLeaseCount: number; // PROCESSING rows past their lease — early signal of worker crashes
 }
 
+/** Ops-table row (2D.1C) — queue-health-level detail, WITHOUT the payload (payload is gated more tightly). */
+export interface OutboxEventListItem {
+  id: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  status: OutboxStatus;
+  attemptCount: number;
+  occurredAt: string;
+  availableAt: string;
+  publishedAt: string | null;
+  correlationId: string | null;
+  lastError: string | null;
+}
+
 /** A read view of an outbox row (ops surface — 2D.1C). Payload is the event snapshot. */
 export interface OutboxEventResponse {
   id: string;

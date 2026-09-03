@@ -4,6 +4,7 @@ import type { LotMovementRow, LotOrigin, LotResponse, LotStockRow, PickableLot }
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { InventoryPostingService, type StockLine } from '../inventory/inventory-posting.service';
+import { OutboxService } from '../outbox/outbox.service';
 import type { RequestUser } from '../common/request-user';
 import { BucketDeltas, D, NIL_UUID, ZERO } from '../inventory/inventory.constants';
 import { DEFAULT_BUSINESS_TZ, daysUntil, expiryStateOf, isExpired, toBusinessDate } from '../common/business-date';
@@ -66,6 +67,7 @@ export class LotsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly posting: InventoryPostingService,
+    private readonly outbox: OutboxService,
   ) {}
 
   /**
@@ -471,12 +473,35 @@ export class LotsService {
       const eventType: ExpiryEventType | null = state === 'EXPIRED' ? 'LOT_EXPIRED' : state === 'EXPIRING_SOON' ? 'LOT_EXPIRING_SOON' : null;
       if (!eventType) continue;
       const days = daysUntil(toBusinessDate(lot.expiryDate, DEFAULT_BUSINESS_TZ), DEFAULT_BUSINESS_TZ);
-      // Dedupe boundary: one fact per (lot, warehouse, eventType). A repeat scan updates daysRemaining only.
-      await this.prisma.lotExpiryFact.upsert({
-        where: { organizationId_lotId_warehouseId_eventType: { organizationId, lotId: lot.id, warehouseId: b.warehouseId, eventType } },
-        create: { organizationId, eventType, warehouseId: b.warehouseId, productId: b.productId, variantId: b.variantId, lotId: lot.id, expiryDate: lot.expiryDate, daysRemaining: days },
-        update: { daysRemaining: days },
-      });
+      // Dedupe boundary: one fact per (lot, warehouse, eventType). A NEW crossing inserts the fact AND its
+      // outbox event in the same transaction (ADR 0010); a repeat scan updates daysRemaining only, no event.
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const fact = await tx.lotExpiryFact.create({
+            data: { organizationId, eventType, warehouseId: b.warehouseId, productId: b.productId, variantId: b.variantId, lotId: lot.id, expiryDate: lot.expiryDate, daysRemaining: days },
+          });
+          await this.outbox.enqueue(tx, {
+            organizationId,
+            eventType: eventType === 'LOT_EXPIRED' ? 'LotExpired' : 'LotExpiringSoon',
+            aggregateType: 'lot',
+            aggregateId: lot.id,
+            dedupeKey: `lot-expiry-fact:${fact.id}`,
+            payload: {
+              lotId: lot.id, lotNumber: lot.lotNumber, warehouseId: b.warehouseId, productId: b.productId,
+              variantId: b.variantId === NIL_UUID ? null : b.variantId,
+              expiryDate: lot.expiryDate ? lot.expiryDate.toISOString() : null, daysRemaining: days,
+            },
+          });
+        });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          // Fact already exists (prior crossing) — refresh daysRemaining only; no duplicate event.
+          await this.prisma.lotExpiryFact.update({
+            where: { organizationId_lotId_warehouseId_eventType: { organizationId, lotId: lot.id, warehouseId: b.warehouseId, eventType } },
+            data: { daysRemaining: days },
+          });
+        } else throw e;
+      }
       if (eventType === 'LOT_EXPIRED') expired += 1; else expiringSoon += 1;
     }
     return { expired, expiringSoon };

@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@iw/contracts';
 import type { CountListItem, CountResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { OutboxService } from '../outbox/outbox.service';
 import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
@@ -24,6 +25,7 @@ export class CountsService {
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async list(organizationId: string, user: RequestUser): Promise<CountListItem[]> {
@@ -259,11 +261,32 @@ export class CountsService {
 
     await this.prisma.stockCount.update({ where: { id }, data: { status: CountStatus.POSTED, postedAt: new Date() } });
     // Cycle-counting completion (2C.3B, ADR 0009 §6): a task COMPLETES only after its count POSTS. The
-    // variance above already went through the ledger; this only flips the planning task + stamps lastCounted.
+    // completion flip AND its CycleCountCompleted outbox event commit atomically (ADR 0010, 2D.1C) — if the
+    // completion rolls back, the event disappears with it. The variance already went through the ledger.
     if (count.cycleCountTaskId) {
-      await this.prisma.cycleCountTask.update({
-        where: { id: count.cycleCountTaskId },
-        data: { status: 'COMPLETED', completedAt: new Date() },
+      const item = count.items[0];
+      const expected = item ? new Prisma.Decimal(item.systemQty) : new Prisma.Decimal(0);
+      const counted = item ? new Prisma.Decimal(item.countedQty ?? item.systemQty) : new Prisma.Decimal(0);
+      const variance = counted.sub(expected);
+      const taskId = count.cycleCountTaskId;
+      await this.prisma.$transaction(async (tx) => {
+        const task = await tx.cycleCountTask.update({
+          where: { id: taskId },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+        await this.outbox.enqueue(tx, {
+          organizationId,
+          eventType: 'CycleCountCompleted',
+          aggregateType: 'cycle_count_task',
+          aggregateId: task.id,
+          dedupeKey: `cycle-count-completed:${task.id}`,
+          payload: {
+            cycleCountTaskId: task.id, stockCountId: count.id, warehouseId: count.warehouseId,
+            productId: item?.productId ?? null, variantId: item?.variantId ?? null, lotId: item?.lotId ?? null,
+            abcClass: task.abcClass, expectedQuantity: expected.toString(), countedQuantity: counted.toString(),
+            varianceQuantity: variance.toString(), completedAt: task.completedAt ? task.completedAt.toISOString() : null,
+          },
+        });
       });
     }
     await this.audit.record({

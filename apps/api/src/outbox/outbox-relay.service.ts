@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, OutboxEvent } from '@prisma/client';
-import type { OutboxHealthResponse } from '@iw/contracts';
+import type { OutboxEventListItem, OutboxHealthResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConsumerRegistry } from './consumer-registry.service';
 import { ConsumerReceipts } from './consumer-receipts.service';
@@ -174,5 +174,43 @@ export class OutboxRelayService {
       lastPublishedAt: lastPublished?.publishedAt ? lastPublished.publishedAt.toISOString() : null,
       expiredLeaseCount,
     };
+  }
+
+  /** Recent outbox rows for the ops table (org-scoped, newest first). No payload — gated more tightly. */
+  async recentEvents(organizationId: string, limit = 50): Promise<OutboxEventListItem[]> {
+    const rows = await this.prisma.outboxEvent.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 200),
+    });
+    return rows.map((e) => ({
+      id: e.id,
+      eventType: e.eventType,
+      aggregateType: e.aggregateType,
+      aggregateId: e.aggregateId,
+      status: e.status,
+      attemptCount: e.attemptCount,
+      occurredAt: e.occurredAt.toISOString(),
+      availableAt: e.availableAt.toISOString(),
+      publishedAt: e.publishedAt ? e.publishedAt.toISOString() : null,
+      correlationId: e.correlationId,
+      lastError: e.lastError,
+    }));
+  }
+
+  /**
+   * Manual retry (authorized ops). Allowed only from FAILED / DEAD_LETTER → PENDING, availableAt now,
+   * lastError cleared. attemptCount is PRESERVED (lifetime attempt history), not reset.
+   */
+  async retry(organizationId: string, id: string): Promise<void> {
+    const ev = await this.prisma.outboxEvent.findFirst({ where: { id, organizationId }, select: { status: true } });
+    if (!ev) throw new NotFoundException('Outbox event not found');
+    if (ev.status !== 'FAILED' && ev.status !== 'DEAD_LETTER') {
+      throw new BadRequestException(`Only a FAILED or DEAD_LETTER event can be retried (is ${ev.status})`);
+    }
+    await this.prisma.outboxEvent.update({
+      where: { id },
+      data: { status: 'PENDING', availableAt: new Date(), leaseExpiresAt: null, lastError: null },
+    });
   }
 }
