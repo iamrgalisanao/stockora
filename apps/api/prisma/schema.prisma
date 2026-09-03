@@ -1707,6 +1707,22 @@ model Supplier {
   @@map("suppliers")
 }
 
+/// Org-level supplier-scoring weights (2D.4B). Persisted as relative weights (need not sum to 1); the
+/// scorer renormalizes over the metrics each supplier actually has data for. One row per organization.
+model SupplierAnalyticsPolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  fillRateWeight Decimal  @default(0.25) @map("fill_rate_weight") @db.Decimal(9, 4)
+  onTimeWeight   Decimal  @default(0.20) @map("on_time_weight") @db.Decimal(9, 4)
+  leadTimeWeight Decimal  @default(0.20) @map("lead_time_weight") @db.Decimal(9, 4)
+  priceWeight    Decimal  @default(0.20) @map("price_weight") @db.Decimal(9, 4)
+  qualityWeight  Decimal  @default(0.15) @map("quality_weight") @db.Decimal(9, 4)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("supplier_analytics_policies")
+}
+
 // A supplier's offer for a product: their SKU, price, lead time (Phase 05).
 model SupplierProduct {
   id             String   @id @default(uuid()) @db.Uuid

@@ -96,7 +96,7 @@ describe('Supplier analytics (e2e, 2D.4A)', () => {
     await postReceipt({ warehouseId: whId, supplierId: s, receivingDate: iso(10), orderDate: iso(15), expectedDeliveryDate: iso(9), items: [{ productId: p, expectedQty: 100, receivedQty: 80, rejectedQty: 20, unitCost: 11 }] });
     const a = await rowOf(s); const b = await rowOf(s);
     expect(a!.performanceScore).toBe(b!.performanceScore);
-    const totalWeight = a!.components.reduce((t: number, c: any) => t + c.weight, 0);
+    const totalWeight = a!.components.reduce((t: number, c: any) => t + c.appliedWeight, 0);
     expect(Math.abs(totalWeight - 1)).toBeLessThan(1e-6);
   });
 
@@ -149,8 +149,8 @@ describe('Supplier analytics (e2e, 2D.4A)', () => {
     expect(byKey.onTime.subScore).toBeNull();
     expect(byKey.leadTime.subScore).toBeNull();
     expect(byKey.price.subScore).toBeNull();
-    expect(byKey.onTime.weight).toBe(0);
-    expect(byKey.fillRate.weight + byKey.quality.weight).toBeCloseTo(1, 6);
+    expect(byKey.onTime.appliedWeight).toBe(0);
+    expect(byKey.fillRate.appliedWeight + byKey.quality.appliedWeight).toBeCloseTo(1, 6);
   });
 
   it('excludes draft/cancelled receipts and enforces the date range', async () => {

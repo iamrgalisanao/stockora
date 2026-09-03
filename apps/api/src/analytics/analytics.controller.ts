@@ -1,10 +1,17 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { DashboardSummary, PERMISSIONS, ReorderAssessment, type SupplierPerformanceResponse } from '@iw/contracts';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Put, Query } from '@nestjs/common';
+import {
+  DashboardSummary, PERMISSIONS, ReorderAssessment,
+  type PreferredSupplierComparisonResponse,
+  type SupplierAnalyticsPolicyResponse,
+  type SupplierPerformanceResponse,
+  type SupplierScorecardResponse,
+} from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { ReorderAssessmentService } from '../inventory-policy/reorder-assessment.service';
 import { DashboardService } from './dashboard.service';
 import { SupplierPerformanceService } from './supplier-performance.service';
+import { SupplierWeightsDto } from './dto/supplier-weights.dto';
 
 @Controller()
 export class AnalyticsController {
@@ -38,5 +45,45 @@ export class AnalyticsController {
     @Query('supplierId') supplierId?: string,
   ): Promise<SupplierPerformanceResponse> {
     return this.supplierPerformance.compare(user.organizationId, user, { from, to, productId, warehouseId, supplierId });
+  }
+
+  /** Org supplier-scoring weights (2D.4B) — relative, renormalized at calculation time. */
+  @RequirePermissions(PERMISSIONS.REPORT_VIEW)
+  @Get('analytics/suppliers/policy')
+  getWeights(@CurrentUser() user: RequestUser): Promise<SupplierAnalyticsPolicyResponse> {
+    return this.supplierPerformance.getWeights(user.organizationId);
+  }
+
+  @RequirePermissions(PERMISSIONS.SETTINGS_MANAGE)
+  @Put('analytics/suppliers/policy')
+  setWeights(@CurrentUser() user: RequestUser, @Body() dto: SupplierWeightsDto): Promise<SupplierAnalyticsPolicyResponse> {
+    return this.supplierPerformance.upsertWeights(user.organizationId, dto);
+  }
+
+  /** Advisory preferred-vs-observed comparison off the authoritative InventoryPolicy.preferredSupplierId. */
+  @RequirePermissions(PERMISSIONS.REPORT_VIEW)
+  @Get('analytics/suppliers/preferred-comparison')
+  preferredComparison(
+    @CurrentUser() user: RequestUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('productId') productId?: string,
+    @Query('warehouseId') warehouseId?: string,
+  ): Promise<PreferredSupplierComparisonResponse> {
+    return this.supplierPerformance.preferredComparison(user.organizationId, user, { from, to, productId, warehouseId });
+  }
+
+  /** Supplier scorecard: current period + trend vs the equal-length prior period + per-product breakdown. */
+  @RequirePermissions(PERMISSIONS.REPORT_VIEW)
+  @Get('analytics/suppliers/:id/scorecard')
+  scorecard(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('productId') productId?: string,
+    @Query('warehouseId') warehouseId?: string,
+  ): Promise<SupplierScorecardResponse> {
+    return this.supplierPerformance.scorecard(user.organizationId, user, id, { from, to, productId, warehouseId });
   }
 }
