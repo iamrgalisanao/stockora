@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { AllocationPlan, LotExpiryState, LotMovementRow, LotResponse, PickableLot, PERMISSIONS } from '@iw/contracts';
+import { AllocationPlan, ExpiryDashboardRow, ExpiryEventType, LotExpiryFactResponse, LotExpiryState, LotMovementRow, LotResponse, PickableLot, PERMISSIONS } from '@iw/contracts';
 import { Prisma } from '@prisma/client';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
@@ -41,6 +41,37 @@ export class LotsController {
     @Query('variantId') variantId?: string,
   ): Promise<PickableLot[]> {
     return this.lots.pickable(user.organizationId, user, productId, warehouseId, variantId);
+  }
+
+  /** Expiry dashboard — per-(lot, warehouse) rows with derived state + days remaining (2C.2C). */
+  @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
+  @Get('expiry-dashboard')
+  expiryDashboard(
+    @CurrentUser() user: RequestUser,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('productId') productId?: string,
+    @Query('q') q?: string,
+    @Query('expiryState') expiryState?: LotExpiryState,
+    @Query('hasStock') hasStock?: string,
+    @Query('withinDays') withinDays?: string,
+  ): Promise<ExpiryDashboardRow[]> {
+    return this.lots.expiryDashboard(user.organizationId, user, {
+      warehouseId, productId, q, expiryState, hasStock: hasStock === 'true',
+      withinDays: withinDays !== undefined ? Number(withinDays) : undefined,
+    });
+  }
+
+  /** Run idempotent expiry-condition detection, emitting facts (never notifications). */
+  @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
+  @Post('expiry-scan')
+  expiryScan(@CurrentUser() user: RequestUser): Promise<{ expired: number; expiringSoon: number }> {
+    return this.lots.scanExpiryFacts(user.organizationId, user);
+  }
+
+  @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
+  @Get('expiry-facts')
+  expiryFacts(@CurrentUser() user: RequestUser, @Query('eventType') eventType?: ExpiryEventType): Promise<LotExpiryFactResponse[]> {
+    return this.lots.listExpiryFacts(user.organizationId, user, { eventType });
   }
 
   /** Advisory FEFO allocation preview (ADR 0008 §7) — read-only; authoritative allocation happens at post. */

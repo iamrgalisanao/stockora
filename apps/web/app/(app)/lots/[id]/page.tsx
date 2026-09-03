@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import type { LotMovementRow, LotResponse } from '@iw/contracts';
 import { api } from '../../../../lib/api';
+import { ExpiryBadge } from '../../../../components/ExpiryBadge';
 
 const fmt = (v: string | null) => (v ? new Date(v).toLocaleString() : '—');
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString() : '—');
@@ -40,7 +41,8 @@ export default function LotDetailPage() {
       <div className="topbar">
         <h1 className="h1">
           Lot {lot.lotNumber}
-          <span className={`badge ${lot.status === 'ACTIVE' ? 'ok' : 'muted'}`} style={{ marginLeft: 8 }}>{lot.status}</span>
+          <span className={`badge ${lot.status === 'ACTIVE' ? 'ok' : 'muted'}`} style={{ marginLeft: 8 }} title="Lifecycle">{lot.status}</span>
+          {' '}<ExpiryBadge state={lot.expiryState} />
           {lot.origin === 'LEGACY_MIGRATION' && <span className="badge warn" style={{ marginLeft: 6 }}>Migrated / Unspecified</span>}
         </h1>
         <Link href="/lots" className="btn secondary">← All lots</Link>

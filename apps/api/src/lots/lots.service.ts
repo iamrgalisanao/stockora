@@ -7,7 +7,7 @@ import { InventoryPostingService, type StockLine } from '../inventory/inventory-
 import type { RequestUser } from '../common/request-user';
 import { BucketDeltas, D, NIL_UUID, ZERO } from '../inventory/inventory.constants';
 import { DEFAULT_BUSINESS_TZ, daysUntil, expiryStateOf, isExpired, toBusinessDate } from '../common/business-date';
-import { DEFAULT_EXPIRING_SOON_DAYS, type AllocationPlan, type AllocationStrategy, type LotExpiryState } from '@iw/contracts';
+import { DEFAULT_EXPIRING_SOON_DAYS, type AllocationPlan, type AllocationStrategy, type ExpiryDashboardRow, type ExpiryEventType, type LotExpiryFactResponse, type LotExpiryState } from '@iw/contracts';
 
 /** A stock line carrying raw lot metadata, resolved to a lotId before posting. */
 export interface LotLineInput {
@@ -406,6 +406,94 @@ export class LotsService {
       ...this.toResponse(lot, { onHand: sum('onHand'), reserved: sum('reserved'), inTransit: sum('inTransit'), quarantined: sum('quarantined'), damaged: sum('damaged') }),
       stock,
     };
+  }
+
+  // ---- expiry dashboard + alert facts (2C.2C, ADR 0008 §9-10) ----
+
+  /** Per-(lot, warehouse) expiry view: on hand / available / days remaining / derived state. */
+  async expiryDashboard(
+    organizationId: string,
+    user: RequestUser,
+    filter: { warehouseId?: string; productId?: string; q?: string; expiryState?: LotExpiryState; hasStock?: boolean; withinDays?: number } = {},
+  ): Promise<ExpiryDashboardRow[]> {
+    const scope = user.warehouseScope;
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: {
+        organizationId,
+        lotId: { not: NIL_UUID }, // real lots only
+        ...(scope !== null ? { warehouseId: { in: scope } } : {}),
+        ...(filter.warehouseId ? { warehouseId: filter.warehouseId } : {}),
+        ...(filter.productId ? { productId: filter.productId } : {}),
+        ...(filter.hasStock ? { onHand: { not: 0 } } : {}),
+      },
+      include: { product: { select: { sku: true, name: true } }, warehouse: { select: { code: true } } },
+    });
+    if (balances.length === 0) return [];
+    const lots = await this.prisma.inventoryLot.findMany({ where: { organizationId, id: { in: [...new Set(balances.map((b) => b.lotId))] } } });
+    const lotById = new Map(lots.map((l) => [l.id, l]));
+
+    const rows: ExpiryDashboardRow[] = [];
+    for (const b of balances) {
+      const lot = lotById.get(b.lotId);
+      if (!lot) continue;
+      const state = expiryStateOf(lot.expiryDate, DEFAULT_EXPIRING_SOON_DAYS, DEFAULT_BUSINESS_TZ);
+      const days = lot.expiryDate ? daysUntil(toBusinessDate(lot.expiryDate, DEFAULT_BUSINESS_TZ), DEFAULT_BUSINESS_TZ) : null;
+      rows.push({
+        lotId: lot.id, lotNumber: lot.lotNumber, productId: b.productId, productSku: b.product.sku, productName: b.product.name,
+        variantId: b.variantId === NIL_UUID ? null : b.variantId, warehouseId: b.warehouseId, warehouseCode: b.warehouse.code,
+        onHand: b.onHand.toString(), available: b.onHand.sub(b.reserved).sub(b.quarantined).toString(),
+        expiryDate: lot.expiryDate ? lot.expiryDate.toISOString() : null, daysRemaining: days, expiryState: state,
+      });
+    }
+    return rows
+      .filter((r) => !filter.expiryState || r.expiryState === filter.expiryState)
+      .filter((r) => !filter.q || r.lotNumber.toLowerCase().includes(filter.q.toLowerCase()) || r.productSku.toLowerCase().includes(filter.q.toLowerCase()))
+      .filter((r) => filter.withinDays === undefined || (r.daysRemaining !== null && r.daysRemaining <= filter.withinDays))
+      .sort((a, b) => (a.daysRemaining ?? Infinity) - (b.daysRemaining ?? Infinity));
+  }
+
+  /**
+   * Idempotent expiry-condition detection (ADR 0008 §10). Emits at most one LotExpired / LotExpiringSoon
+   * fact per (lot, warehouse) crossing; a repeat scan is a no-op. Produces facts only — never notifications.
+   */
+  async scanExpiryFacts(organizationId: string, user: RequestUser): Promise<{ expired: number; expiringSoon: number }> {
+    const scope = user.warehouseScope;
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: { organizationId, lotId: { not: NIL_UUID }, onHand: { not: 0 }, ...(scope !== null ? { warehouseId: { in: scope } } : {}) },
+    });
+    const lots = await this.prisma.inventoryLot.findMany({ where: { organizationId, id: { in: [...new Set(balances.map((b) => b.lotId))] }, status: 'ACTIVE' } });
+    const lotById = new Map(lots.map((l) => [l.id, l]));
+    let expired = 0, expiringSoon = 0;
+    for (const b of balances) {
+      const lot = lotById.get(b.lotId);
+      if (!lot || !lot.expiryDate) continue;
+      const state = expiryStateOf(lot.expiryDate, DEFAULT_EXPIRING_SOON_DAYS, DEFAULT_BUSINESS_TZ);
+      const eventType: ExpiryEventType | null = state === 'EXPIRED' ? 'LOT_EXPIRED' : state === 'EXPIRING_SOON' ? 'LOT_EXPIRING_SOON' : null;
+      if (!eventType) continue;
+      const days = daysUntil(toBusinessDate(lot.expiryDate, DEFAULT_BUSINESS_TZ), DEFAULT_BUSINESS_TZ);
+      // Dedupe boundary: one fact per (lot, warehouse, eventType). A repeat scan updates daysRemaining only.
+      await this.prisma.lotExpiryFact.upsert({
+        where: { organizationId_lotId_warehouseId_eventType: { organizationId, lotId: lot.id, warehouseId: b.warehouseId, eventType } },
+        create: { organizationId, eventType, warehouseId: b.warehouseId, productId: b.productId, variantId: b.variantId, lotId: lot.id, expiryDate: lot.expiryDate, daysRemaining: days },
+        update: { daysRemaining: days },
+      });
+      if (eventType === 'LOT_EXPIRED') expired += 1; else expiringSoon += 1;
+    }
+    return { expired, expiringSoon };
+  }
+
+  async listExpiryFacts(organizationId: string, user: RequestUser, filter: { eventType?: ExpiryEventType } = {}): Promise<LotExpiryFactResponse[]> {
+    const scope = user.warehouseScope;
+    const rows = await this.prisma.lotExpiryFact.findMany({
+      where: { organizationId, ...(filter.eventType ? { eventType: filter.eventType } : {}), ...(scope !== null ? { warehouseId: { in: scope } } : {}) },
+      orderBy: { detectedAt: 'desc' },
+      take: 500,
+    });
+    return rows.map((f) => ({
+      id: f.id, eventType: f.eventType, warehouseId: f.warehouseId, productId: f.productId,
+      variantId: f.variantId === NIL_UUID ? null : f.variantId, lotId: f.lotId,
+      expiryDate: f.expiryDate ? f.expiryDate.toISOString() : null, daysRemaining: f.daysRemaining, detectedAt: f.detectedAt.toISOString(),
+    }));
   }
 
   // ---- close ----

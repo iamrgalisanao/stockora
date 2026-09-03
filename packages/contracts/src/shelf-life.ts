@@ -31,6 +31,39 @@ export interface AllocationPlan {
   allocations: AllocationPlanLine[];
 }
 
+/** A per-(lot, warehouse) row for the expiry dashboard. */
+export interface ExpiryDashboardRow {
+  lotId: string;
+  lotNumber: string;
+  productId: string;
+  productSku: string;
+  productName: string;
+  variantId: string | null;
+  warehouseId: string;
+  warehouseCode: string;
+  onHand: string;
+  available: string;
+  expiryDate: string | null;
+  daysRemaining: number | null;
+  expiryState: LotExpiryState;
+}
+
+export const EXPIRY_EVENT_TYPES = ['LOT_EXPIRING_SOON', 'LOT_EXPIRED'] as const;
+export type ExpiryEventType = (typeof EXPIRY_EVENT_TYPES)[number];
+
+/** An idempotent expiry-condition fact — "a condition became true" (not audit, not a notification). */
+export interface LotExpiryFactResponse {
+  id: string;
+  eventType: ExpiryEventType;
+  warehouseId: string;
+  productId: string;
+  variantId: string | null;
+  lotId: string;
+  expiryDate: string | null;
+  daysRemaining: number;
+  detectedAt: string;
+}
+
 export interface ShelfLifePolicyResponse {
   productId: string;
   variantId: string | null;

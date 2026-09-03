@@ -8,11 +8,14 @@ import {
   type ReleaseDestinationType,
   type WarehouseResponse,
 } from '@iw/contracts';
+import type { AllocationPlanLine } from '@iw/contracts';
 import { api, type CreateReleaseBody } from '../../../../lib/api';
 
 interface Line {
   productId: string;
   requestedQty: string;
+  allocations?: AllocationPlanLine[]; // set by the FEFO preview for batch-tracked products
+  previewNote?: string;
 }
 const emptyLine = (): Line => ({ productId: '', requestedQty: '' });
 
@@ -43,13 +46,37 @@ export default function NewReleasePage() {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
 
+  const isBatch = (productId: string) => products.find((p) => p.id === productId)?.isBatchTracked ?? false;
+
+  async function previewFefo(i: number) {
+    const l = lines[i];
+    if (!l || !l.productId || !warehouseId || !(Number(l.requestedQty) > 0)) return setError('Choose a product, warehouse and quantity first');
+    setError(null);
+    try {
+      const plan = await api.lots.fefoPlan(l.productId, warehouseId, Number(l.requestedQty));
+      if (!plan.complete) {
+        setLine(i, { allocations: undefined, previewNote: `Insufficient eligible stock — only ${plan.allocatedQuantity} of ${plan.requestedQuantity} can be FEFO-allocated.` });
+        return;
+      }
+      const note = plan.allocations.map((a) => `${a.lotNumber} ×${a.quantity}${a.expiryDate ? ` (exp ${new Date(a.expiryDate).toLocaleDateString()})` : ''}`).join(', ');
+      setLine(i, { allocations: plan.allocations, previewNote: `FEFO: ${note}` });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'FEFO preview failed');
+    }
+  }
+
   async function submit() {
     setError(null);
     if (!warehouseId) return setError('Select a warehouse');
-    const items = lines
-      .filter((l) => l.productId && Number(l.requestedQty) > 0)
-      .map((l) => ({ productId: l.productId, requestedQty: Number(l.requestedQty) }));
-    if (items.length === 0) return setError('Add at least one line with a quantity');
+    const chosen = lines.filter((l) => l.productId && Number(l.requestedQty) > 0);
+    if (chosen.length === 0) return setError('Add at least one line with a quantity');
+    if (chosen.some((l) => isBatch(l.productId) && !l.allocations)) {
+      return setError('Preview FEFO for each batch-tracked line to attach its lot allocation.');
+    }
+    const items = chosen.map((l) => ({
+      productId: l.productId, requestedQty: Number(l.requestedQty),
+      ...(l.allocations ? { allocations: l.allocations.map((a) => ({ lotId: a.lotId, quantity: Number(a.quantity) })) } : {}),
+    }));
 
     const body: CreateReleaseBody = {
       warehouseId,
@@ -126,11 +153,17 @@ export default function NewReleasePage() {
                       </select>
                     </td>
                     <td className="num">
-                      <input className="inline" style={{ width: 110, textAlign: 'right' }} type="number" min="0" value={l.requestedQty} onChange={(e) => setLine(i, { requestedQty: e.target.value })} />
+                      <input className="inline" style={{ width: 110, textAlign: 'right' }} type="number" min="0" value={l.requestedQty} onChange={(e) => setLine(i, { requestedQty: e.target.value, allocations: undefined, previewNote: undefined })} />
                     </td>
                     <td>
+                      {isBatch(l.productId) && (
+                        <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => previewFefo(i)}>Preview FEFO</button>
+                      )}
                       {lines.length > 1 && (
-                        <button className="btn secondary small" onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))}>✕</button>
+                        <button className="btn secondary small" style={{ marginTop: 0, marginLeft: 6 }} onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))}>✕</button>
+                      )}
+                      {l.previewNote && (
+                        <div className={l.allocations ? 'muted' : 'error'} style={{ fontSize: 12, marginTop: 4 }}>{l.previewNote}</div>
                       )}
                     </td>
                   </tr>

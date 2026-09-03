@@ -51,7 +51,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **2C.2 — Expiry + FEFO** (shelf-life rules + first-expired-first-out allocation; [ADR 0008](docs/adr/0008-expiry-fefo.md)):
   - **2C.2A — Expiry Policy + Eligibility (ShelfLifePolicy; business-date expiry; receiving validation + audited short-dated override; expired/expiring read model; release + picker exclude expired lots):** ✅ [docs/PHASE-2C2A-EXPIRY-POLICY.md](docs/PHASE-2C2A-EXPIRY-POLICY.md)
   - **2C.2B — FEFO Allocation (deterministic FEFO allocator + advisory preview; release auto-generates or revalidates plans under lock; stale-plan conflict; audited fefo_override for non-FEFO manual selection):** ✅ [docs/PHASE-2C2B-FEFO-ALLOCATION.md](docs/PHASE-2C2B-FEFO-ALLOCATION.md)
-  - **Next:** 2C.2C Expiry UX + Alerts Foundation.
+  - **2C.2C — Expiry UX + Alerts Foundation (expiry dashboard + badges + FEFO preview UX; idempotent LotExpiryFact detection, no notification coupling):** ✅ [docs/PHASE-2C2C-EXPIRY-UX.md](docs/PHASE-2C2C-EXPIRY-UX.md)
+- **✅ 2C.2 — Expiry + FEFO complete.**
+- **Next:** 2C.3 Cycle Counting (scheduling / ABC over the lot-aware count engine).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

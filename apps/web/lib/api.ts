@@ -16,6 +16,9 @@ import type {
   LotResponse,
   LotMovementRow,
   PickableLot,
+  ExpiryDashboardRow,
+  LotExpiryFactResponse,
+  AllocationPlan,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -79,7 +82,7 @@ export interface CreateReleaseBody {
   destinationRef?: string;
   reference?: string;
   notes?: string;
-  items: Array<{ productId: string; requestedQty: number }>;
+  items: Array<{ productId: string; requestedQty: number; reservationLineId?: string; allocations?: Array<{ lotId: string; quantity: number }> }>;
 }
 
 export interface CreateReceiptBody {
@@ -245,7 +248,8 @@ export const api = {
       request<ReleaseResponse>(`/releases/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }),
     reject: (id: string, reason: string) =>
       request<ReleaseResponse>(`/releases/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
-    post: (id: string) => request<ReleaseResponse>(`/releases/${id}/post`, { method: 'POST' }),
+    post: (id: string, fefoOverrideReason?: string) =>
+      request<ReleaseResponse>(`/releases/${id}/post`, { method: 'POST', body: JSON.stringify(fefoOverrideReason ? { fefoOverrideReason } : {}) }),
     cancel: (id: string) => request<ReleaseResponse>(`/releases/${id}/cancel`, { method: 'POST' }),
   },
 
@@ -453,6 +457,16 @@ export const api = {
     pickable: (productId: string, warehouseId: string, variantId?: string) =>
       request<PickableLot[]>(`/lots/pickable?productId=${productId}&warehouseId=${warehouseId}${variantId ? `&variantId=${variantId}` : ''}`),
     close: (id: string) => request<LotResponse>(`/lots/${id}/close`, { method: 'POST' }),
+    fefoPlan: (productId: string, warehouseId: string, quantity: number, variantId?: string) =>
+      request<AllocationPlan>(`/lots/fefo-plan?productId=${productId}&warehouseId=${warehouseId}&quantity=${quantity}${variantId ? `&variantId=${variantId}` : ''}`),
+    expiryDashboard: (filters: Record<string, string> = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+      const qs = p.toString();
+      return request<ExpiryDashboardRow[]>(`/lots/expiry-dashboard${qs ? `?${qs}` : ''}`);
+    },
+    expiryScan: () => request<{ expired: number; expiringSoon: number }>('/lots/expiry-scan', { method: 'POST' }),
+    expiryFacts: (eventType?: string) => request<LotExpiryFactResponse[]>(`/lots/expiry-facts${eventType ? `?eventType=${eventType}` : ''}`),
   },
 
   imports: {

@@ -1173,6 +1173,31 @@ enum AllocationStrategy {
   FEFO
 }
 
+enum ExpiryEventType {
+  LOT_EXPIRING_SOON
+  LOT_EXPIRED
+}
+
+/// An idempotent expiry-condition FACT (2C.2C, ADR 0008 §10) — "a condition became true", NOT an audit
+/// entry and NOT a notification. One row per (lot, warehouse, eventType) threshold crossing; a later scan
+/// is a no-op. A future outbox can publish these without changing expiry semantics.
+model LotExpiryFact {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  eventType      ExpiryEventType @map("event_type")
+  warehouseId    String          @map("warehouse_id") @db.Uuid
+  productId      String          @map("product_id") @db.Uuid
+  variantId      String          @map("variant_id") @db.Uuid
+  lotId          String          @map("lot_id") @db.Uuid
+  expiryDate     DateTime?       @map("expiry_date")
+  daysRemaining  Int             @map("days_remaining")
+  detectedAt     DateTime        @default(now()) @map("detected_at")
+
+  @@unique([organizationId, lotId, warehouseId, eventType])
+  @@index([organizationId, eventType, detectedAt])
+  @@map("lot_expiry_facts")
+}
+
 /// Per-product shelf-life + allocation policy (2C.2, ADR 0008). Expiry expectations are policy, not
 /// hardcoded — not every batch-tracked product requires expiry. Absence of a row = no expiry requirement,
 /// MANUAL allocation. variantId uses the NIL-UUID sentinel for base product.
