@@ -16,7 +16,7 @@ export class NotificationsService {
         ...(opts.unread ? { readAt: null } : {}),
         notification: { organizationId: user.organizationId },
       },
-      include: { notification: true },
+      include: { notification: true, deliveries: { where: { channel: 'EMAIL' }, select: { status: true } } },
       orderBy: { notification: { createdAt: 'desc' } },
       take: Math.min(opts.limit ?? 50, 200),
     });
@@ -32,6 +32,7 @@ export class NotificationsService {
       createdAt: r.notification.createdAt.toISOString(),
       readAt: r.readAt ? r.readAt.toISOString() : null,
       dismissedAt: r.dismissedAt ? r.dismissedAt.toISOString() : null,
+      emailStatus: r.deliveries[0]?.status ?? null, // this user's own EMAIL delivery state, if queued
     }));
   }
 

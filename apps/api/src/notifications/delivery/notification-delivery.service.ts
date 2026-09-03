@@ -3,8 +3,9 @@ import { Prisma, NotificationDelivery } from '@prisma/client';
 import type { NotificationDeliveryListItem } from '@iw/contracts';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationPreferencesService } from '../notification-preferences.service';
+import { WebhookConfigService } from '../webhook-config.service';
 import { NotificationTemplateRenderer } from './template-renderer';
-import { ChannelAdapterRegistry } from './channel-adapter';
+import { ChannelAdapterRegistry, type OutboundMessage } from './channel-adapter';
 
 const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) ? Number(v) : d);
 
@@ -38,6 +39,7 @@ export class NotificationDeliveryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly preferences: NotificationPreferencesService,
+    private readonly webhook: WebhookConfigService,
     private readonly renderer: NotificationTemplateRenderer,
     private readonly adapters: ChannelAdapterRegistry,
   ) {}
@@ -50,14 +52,13 @@ export class NotificationDeliveryService {
   }
 
   private async claim(now: Date, organizationId?: string): Promise<NotificationDelivery[]> {
-    const orgClause = organizationId
-      ? Prisma.sql`AND notification_recipient_id IN (SELECT nr.id FROM notification_recipients nr JOIN notifications n ON n.id = nr.notification_id WHERE n.organization_id = ${organizationId}::uuid)`
-      : Prisma.empty;
+    const orgClause = organizationId ? Prisma.sql`AND organization_id = ${organizationId}::uuid` : Prisma.empty;
     return this.prisma.$transaction(async (tx) => {
+      // Compare against the DATABASE clock (now()) to avoid client/DB clock-skew under-claiming.
       const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id FROM notification_deliveries
-        WHERE ( (status IN ('PENDING', 'FAILED') AND available_at <= ${now})
-             OR (status = 'PROCESSING' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ${now}) )
+        WHERE ( (status IN ('PENDING', 'FAILED') AND available_at <= now())
+             OR (status = 'PROCESSING' AND lease_expires_at IS NOT NULL AND lease_expires_at <= now()) )
         ${orgClause}
         ORDER BY available_at ASC
         LIMIT ${this.config.batchSize}
@@ -73,24 +74,34 @@ export class NotificationDeliveryService {
     const attempt = delivery.attemptCount + 1;
     await this.prisma.notificationDelivery.update({ where: { id: delivery.id }, data: { attemptCount: attempt } });
 
-    const recipient = await this.prisma.notificationRecipient.findUnique({ where: { id: delivery.notificationRecipientId }, include: { notification: true } });
-    if (!recipient) return this.markSkipped(delivery.id, 'recipient no longer exists');
-    const notification = recipient.notification;
-
-    // Re-check eligibility at send time (a valid queued delivery may become non-sendable).
-    const active = await this.prisma.membership.findFirst({ where: { organizationId: notification.organizationId, userId: recipient.userId, status: 'ACTIVE' }, select: { id: true } });
-    if (!active) return this.markSkipped(delivery.id, 'recipient is no longer an active member');
-    if (!(await this.preferences.isEnabled(recipient.userId, notification.type, delivery.channel))) {
-      return this.markSkipped(delivery.id, 'channel preference disabled');
-    }
-
+    const notification = await this.prisma.notification.findUnique({ where: { id: delivery.notificationId } });
+    if (!notification) return this.markSkipped(delivery.id, 'notification no longer exists');
     const adapter = this.adapters.adapterFor(delivery.channel);
     if (!adapter) return this.fail(delivery.id, attempt, `no adapter for channel ${delivery.channel}`);
-    const user = await this.prisma.user.findUnique({ where: { id: recipient.userId }, select: { email: true } });
-    if (!user) return this.markSkipped(delivery.id, 'recipient user not found');
+
+    // Build the channel message, re-checking eligibility at send time (a queued delivery may become
+    // non-sendable — a disabled member, a revoked preference, a disabled webhook).
+    let message: OutboundMessage;
+    if (delivery.channel === 'EMAIL') {
+      if (!delivery.notificationRecipientId) return this.markSkipped(delivery.id, 'email delivery has no recipient');
+      const recipient = await this.prisma.notificationRecipient.findUnique({ where: { id: delivery.notificationRecipientId } });
+      if (!recipient) return this.markSkipped(delivery.id, 'recipient no longer exists');
+      const active = await this.prisma.membership.findFirst({ where: { organizationId: notification.organizationId, userId: recipient.userId, status: 'ACTIVE' }, select: { id: true } });
+      if (!active) return this.markSkipped(delivery.id, 'recipient is no longer an active member');
+      if (!(await this.preferences.isEnabled(recipient.userId, notification.type, 'EMAIL'))) return this.markSkipped(delivery.id, 'channel preference disabled');
+      const user = await this.prisma.user.findUnique({ where: { id: recipient.userId }, select: { email: true } });
+      if (!user) return this.markSkipped(delivery.id, 'recipient user not found');
+      message = this.renderer.renderEmail(notification, user.email);
+    } else {
+      // WEBHOOK — org-level; re-check the org config is enabled and still subscribed to this type.
+      const config = await this.webhook.activeConfig(notification.organizationId);
+      if (!config) return this.markSkipped(delivery.id, 'webhook integration disabled');
+      if (!(await this.webhook.isSubscribed(notification.organizationId, notification.type))) return this.markSkipped(delivery.id, 'webhook not subscribed to this type');
+      message = this.renderer.renderWebhook(notification, delivery.id, config.url, config.signingSecret);
+    }
 
     try {
-      const { providerMessageId } = await adapter.send(this.renderer.render(notification, user.email));
+      const { providerMessageId } = await adapter.send(message);
       await this.prisma.notificationDelivery.update({
         where: { id: delivery.id },
         data: { status: 'SENT', sentAt: new Date(), leaseExpiresAt: null, lastError: null, providerMessageId: providerMessageId ?? null },
@@ -120,8 +131,8 @@ export class NotificationDeliveryService {
 
   async recentDeliveries(organizationId: string, limit = 50): Promise<NotificationDeliveryListItem[]> {
     const rows = await this.prisma.notificationDelivery.findMany({
-      where: { recipient: { notification: { organizationId } } },
-      include: { recipient: { include: { notification: { select: { type: true } } } } },
+      where: { organizationId },
+      include: { notification: { select: { type: true } }, recipient: { select: { userId: true } } },
       orderBy: { createdAt: 'desc' },
       take: Math.min(limit, 200),
     });
@@ -130,8 +141,8 @@ export class NotificationDeliveryService {
       channel: d.channel,
       status: d.status,
       attemptCount: d.attemptCount,
-      notificationType: d.recipient.notification.type,
-      recipientUserId: d.recipient.userId,
+      notificationType: d.notification.type,
+      recipientUserId: d.recipient?.userId ?? null,
       availableAt: d.availableAt.toISOString(),
       sentAt: d.sentAt ? d.sentAt.toISOString() : null,
       lastError: d.lastError,

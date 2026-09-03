@@ -1444,6 +1444,7 @@ model Notification {
   createdAt      DateTime             @default(now()) @map("created_at")
 
   recipients NotificationRecipient[]
+  deliveries NotificationDelivery[]
 
   // Idempotent creation: one notification per business fact per rule (ADR 0011 §7).
   @@unique([eventId, ruleKey])
@@ -1467,11 +1468,38 @@ model NotificationRecipient {
   @@map("notification_recipients")
 }
 
+// Org-level webhook integration (2D.2C, ADR 0011) — a webhook is an integration endpoint, not a personal
+// channel. One active endpoint per org (v1); WebhookSubscription controls which types flow to it.
+model OrganizationWebhookConfig {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  url            String
+  signingSecret  String?  @map("signing_secret")
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("organization_webhook_configs")
+}
+
+model WebhookSubscription {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  notificationType String   @map("notification_type")
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizationId, notificationType])
+  @@map("webhook_subscriptions")
+}
+
 // External delivery framework (Phase 2D.2B, ADR 0011 §8) — outbound channels behind the in-app inbox.
 // Strict opt-in: a delivery row is queued only when the recipient has enabled the channel for that type.
 
 enum NotificationChannel {
   EMAIL
+  WEBHOOK
 }
 
 enum NotificationDeliveryStatus {
@@ -1485,7 +1513,10 @@ enum NotificationDeliveryStatus {
 
 model NotificationDelivery {
   id                      String                     @id @default(uuid()) @db.Uuid
-  notificationRecipientId String                     @map("notification_recipient_id") @db.Uuid
+  notificationId          String                     @map("notification_id") @db.Uuid
+  organizationId          String                     @map("organization_id") @db.Uuid
+  // Set for per-recipient channels (EMAIL); null for org-level channels (WEBHOOK).
+  notificationRecipientId String?                    @map("notification_recipient_id") @db.Uuid
   channel                 NotificationChannel
   status                  NotificationDeliveryStatus @default(PENDING)
   attemptCount            Int                        @default(0) @map("attempt_count")
@@ -1498,11 +1529,14 @@ model NotificationDelivery {
   createdAt               DateTime                   @default(now()) @map("created_at")
   updatedAt               DateTime                   @updatedAt @map("updated_at")
 
-  recipient NotificationRecipient @relation(fields: [notificationRecipientId], references: [id], onDelete: Cascade)
+  notification Notification           @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  recipient    NotificationRecipient? @relation(fields: [notificationRecipientId], references: [id], onDelete: Cascade)
 
-  // One logical delivery per (recipient, channel); retries live on this row, never a new one.
+  // Guards EMAIL (recipient-scoped). WEBHOOK dedupe rides the notification consumer's transactional
+  // idempotency (one webhook delivery per notification, created in the same tx).
   @@unique([notificationRecipientId, channel])
   @@index([status, availableAt])
+  @@index([organizationId, createdAt])
   @@map("notification_deliveries")
 }
 

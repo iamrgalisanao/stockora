@@ -5,6 +5,7 @@ import { ConsumerRegistry } from '../outbox/consumer-registry.service';
 import type { DomainEventConsumer, DomainEventEnvelope } from '../outbox/consumer';
 import { NotificationRuleEngine } from './notification-rules.service';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { WebhookConfigService } from './webhook-config.service';
 
 /**
  * Outbox consumer that turns delivered domain facts into user-facing notifications (ADR 0011). Idempotent:
@@ -23,6 +24,7 @@ export class NotificationConsumer implements DomainEventConsumer, OnModuleInit {
     private readonly registry: ConsumerRegistry,
     private readonly rules: NotificationRuleEngine,
     private readonly preferences: NotificationPreferencesService,
+    private readonly webhook: WebhookConfigService,
   ) {}
 
   onModuleInit(): void {
@@ -34,8 +36,9 @@ export class NotificationConsumer implements DomainEventConsumer, OnModuleInit {
   async handle(event: DomainEventEnvelope): Promise<void> {
     const plan = await this.rules.plan(event);
     if (!plan || plan.recipientUserIds.length === 0) return; // no rule / no eligible recipients → nothing
-    // Strict opt-in (ADR 0011 §9): queue an EMAIL delivery only for recipients who explicitly enabled it.
+    // Strict opt-in (ADR 0011 §9): EMAIL per opted-in user; WEBHOOK per org subscription. Read outside the tx.
     const emailEnabled = await this.preferences.enabledUserIds(plan.recipientUserIds, plan.type, 'EMAIL');
+    const webhookSubscribed = await this.webhook.isSubscribed(event.organizationId, plan.type);
     try {
       await this.prisma.$transaction(async (tx) => {
         const notification = await tx.notification.create({
@@ -54,9 +57,13 @@ export class NotificationConsumer implements DomainEventConsumer, OnModuleInit {
           },
           include: { recipients: true },
         });
-        const deliveries = notification.recipients
-          .filter((r) => emailEnabled.has(r.userId))
-          .map((r) => ({ notificationRecipientId: r.id, channel: 'EMAIL' as const }));
+        const deliveries: Array<{ notificationId: string; organizationId: string; notificationRecipientId: string | null; channel: 'EMAIL' | 'WEBHOOK' }> =
+          notification.recipients
+            .filter((r) => emailEnabled.has(r.userId))
+            .map((r) => ({ notificationId: notification.id, organizationId: event.organizationId, notificationRecipientId: r.id, channel: 'EMAIL' }));
+        if (webhookSubscribed) {
+          deliveries.push({ notificationId: notification.id, organizationId: event.organizationId, notificationRecipientId: null, channel: 'WEBHOOK' });
+        }
         if (deliveries.length > 0) await tx.notificationDelivery.createMany({ data: deliveries });
       });
     } catch (e) {

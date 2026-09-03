@@ -1,9 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { NotificationResponse, NotificationSeverity } from '@iw/contracts';
 import { api } from '../../../lib/api';
+
+// User-facing email delivery state — modest wording, no provider internals.
+const EMAIL_LABEL: Record<string, string> = { PENDING: 'Email: queued', PROCESSING: 'Email: sending', SENT: 'Email: sent', FAILED: 'Email: retrying', DEAD_LETTER: 'Email: failed', SKIPPED: 'Email: skipped' };
 
 const SEV_CLS: Record<NotificationSeverity, string> = { INFO: 'muted', WARNING: 'warn', CRITICAL: 'danger' };
 // Where each entity type opens to.
@@ -50,6 +54,7 @@ export default function NotificationsPage() {
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} /> Unread only
           </label>
+          <Link className="btn secondary small" href="/notifications/preferences" style={{ marginTop: 0 }}>Preferences</Link>
           <button className="btn secondary small" style={{ marginTop: 0 }} disabled={busy} onClick={() => act(() => api.notifications.readAll())}>Mark all read</button>
         </div>
       </div>
@@ -66,6 +71,7 @@ export default function NotificationsPage() {
                 <span className="muted" style={{ marginLeft: 'auto', fontSize: 12 }}>{new Date(n.createdAt).toLocaleString()}</span>
               </div>
               <div style={{ marginTop: 4 }}>{n.message}</div>
+              {n.emailStatus && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{EMAIL_LABEL[n.emailStatus] ?? `Email: ${n.emailStatus}`}</div>}
               <div className="toolbar" style={{ gap: 8, marginTop: 8 }}>
                 {n.entityId && LINK[n.entityType ?? ''] && <button className="btn secondary small" style={{ marginTop: 0 }} onClick={() => open(n)}>Open</button>}
                 {!n.readAt && <button className="btn secondary small" style={{ marginTop: 0 }} disabled={busy} onClick={() => act(() => api.notifications.read(n.id))}>Mark read</button>}

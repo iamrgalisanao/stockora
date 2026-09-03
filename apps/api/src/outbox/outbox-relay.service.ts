@@ -67,10 +67,12 @@ export class OutboxRelayService {
   private async claim(now: Date, organizationId?: string): Promise<OutboxEvent[]> {
     const orgClause = organizationId ? Prisma.sql`AND organization_id = ${organizationId}::uuid` : Prisma.empty;
     return this.prisma.$transaction(async (tx) => {
+      // Compare against the DATABASE clock (now()) — never a client timestamp — so client/DB clock skew
+      // can't cause an eligible row to be skipped.
       const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id FROM outbox_events
-        WHERE ( (status IN ('PENDING', 'FAILED') AND available_at <= ${now})
-             OR (status = 'PROCESSING' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ${now}) )
+        WHERE ( (status IN ('PENDING', 'FAILED') AND available_at <= now())
+             OR (status = 'PROCESSING' AND lease_expires_at IS NOT NULL AND lease_expires_at <= now()) )
         ${orgClause}
         ORDER BY available_at ASC
         LIMIT ${this.config.batchSize}
