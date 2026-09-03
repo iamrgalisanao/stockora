@@ -3,13 +3,16 @@ import { Prisma, MovementType, InventoryMovement } from '@prisma/client';
 import { PERMISSIONS } from '@iw/contracts';
 import type {
   BalanceResponse,
+  InventoryPositionRow,
   MovementResponse,
+  PositionFilter,
   ReconciliationResult,
   StockCardEntry,
   StockCardResponse,
 } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import type { RequestUser } from '../common/request-user';
+import { expiryStateOf } from '../common/business-date';
 import { D, NIL_UUID, ZERO } from './inventory.constants';
 
 @Injectable()
@@ -62,6 +65,107 @@ export class InventoryQueryService {
       if (canVal) res.value = onHand.mul(D(b.avgCost)).toDecimalPlaces(4).toString();
       return res;
     });
+  }
+
+  /**
+   * Unified inventory-position read model (2C.4). One row per finest grain over the balance projection,
+   * with derived availability + lot expiry context. Feeds both the position roll-up and the availability
+   * lens; the availability `filter` is applied here so both views share one source of truth.
+   */
+  async listPositions(
+    organizationId: string,
+    user: RequestUser,
+    filter: { warehouseId?: string; productId?: string; q?: string; filter?: PositionFilter; hasStock?: boolean },
+  ): Promise<InventoryPositionRow[]> {
+    const scope = this.scopeFilter(user);
+    const rows = await this.prisma.inventoryBalance.findMany({
+      where: {
+        organizationId,
+        ...(filter.warehouseId ? { warehouseId: filter.warehouseId } : {}),
+        ...(filter.productId ? { productId: filter.productId } : {}),
+        ...(scope ? { warehouseId: scope } : {}),
+      },
+      include: {
+        product: { select: { sku: true, name: true, isBatchTracked: true } },
+        warehouse: { select: { code: true } },
+      },
+      orderBy: [{ productId: 'asc' }, { warehouseId: 'asc' }],
+    });
+
+    const lotIds = [...new Set(rows.map((r) => r.lotId).filter((l) => l !== NIL_UUID))];
+    const lots = lotIds.length
+      ? await this.prisma.inventoryLot.findMany({ where: { organizationId, id: { in: lotIds } }, select: { id: true, lotNumber: true, expiryDate: true } })
+      : [];
+    const lotMap = new Map(lots.map((l) => [l.id, l]));
+
+    const canCost = user.permissions.includes(PERMISSIONS.COST_VIEW);
+    const canVal = user.permissions.includes(PERMISSIONS.VALUATION_VIEW);
+    const q = filter.q?.trim().toLowerCase();
+
+    const out: InventoryPositionRow[] = [];
+    for (const b of rows) {
+      const onHand = D(b.onHand);
+      const reserved = D(b.reserved);
+      const quarantined = D(b.quarantined);
+      const damaged = D(b.damaged);
+      const inTransit = D(b.inTransit);
+      // Damaged is OUTSIDE onHand (ADR 0007) — never subtract it here.
+      const available = onHand.sub(reserved).sub(quarantined);
+
+      // Drop fully-drained rows: a position needs some quantity in some bucket.
+      if (onHand.isZero() && reserved.isZero() && quarantined.isZero() && damaged.isZero() && inTransit.isZero()) continue;
+
+      const lot = b.lotId === NIL_UUID ? null : lotMap.get(b.lotId) ?? null;
+      const expiryDate = lot?.expiryDate ?? null;
+      const expiryState = expiryStateOf(expiryDate);
+
+      if (q && !(b.product.sku.toLowerCase().includes(q) || b.product.name.toLowerCase().includes(q) || (lot?.lotNumber ?? '').toLowerCase().includes(q))) continue;
+
+      if (filter.hasStock && onHand.lte(ZERO) && inTransit.lte(ZERO) && quarantined.lte(ZERO) && damaged.lte(ZERO)) continue;
+
+      if (filter.filter && !this.matchesPositionFilter(filter.filter, { onHand, reserved, quarantined, damaged, inTransit, available, expired: expiryState === 'EXPIRED' })) continue;
+
+      const row: InventoryPositionRow = {
+        productId: b.productId,
+        productSku: b.product.sku,
+        productName: b.product.name,
+        isBatchTracked: b.product.isBatchTracked,
+        variantId: b.variantId === NIL_UUID ? null : b.variantId,
+        warehouseId: b.warehouseId,
+        warehouseCode: b.warehouse.code,
+        lotId: b.lotId === NIL_UUID ? null : b.lotId,
+        lotNumber: lot?.lotNumber ?? null,
+        expiryDate: expiryDate ? expiryDate.toISOString() : null,
+        expiryState,
+        onHand: onHand.toString(),
+        reserved: reserved.toString(),
+        quarantined: quarantined.toString(),
+        damaged: damaged.toString(),
+        inTransit: inTransit.toString(),
+        available: available.toString(),
+      };
+      if (canCost) row.avgCost = b.avgCost.toString();
+      if (canVal) row.value = onHand.mul(D(b.avgCost)).toDecimalPlaces(4).toString();
+      out.push(row);
+    }
+    return out;
+  }
+
+  private matchesPositionFilter(
+    f: PositionFilter,
+    v: { onHand: Prisma.Decimal; reserved: Prisma.Decimal; quarantined: Prisma.Decimal; damaged: Prisma.Decimal; inTransit: Prisma.Decimal; available: Prisma.Decimal; expired: boolean },
+  ): boolean {
+    switch (f) {
+      case 'AVAILABLE': return v.available.gt(ZERO);
+      case 'UNAVAILABLE': return v.available.lte(ZERO);
+      case 'FULLY_RESERVED': return v.onHand.gt(ZERO) && v.reserved.gt(ZERO) && v.available.lte(ZERO);
+      case 'QUARANTINED': return v.quarantined.gt(ZERO);
+      case 'IN_TRANSIT_ONLY': return v.inTransit.gt(ZERO) && v.onHand.lte(ZERO);
+      case 'NEGATIVE_ANOMALY':
+        return v.onHand.lt(ZERO) || v.reserved.lt(ZERO) || v.quarantined.lt(ZERO) || v.damaged.lt(ZERO) || v.inTransit.lt(ZERO) || v.available.lt(ZERO);
+      case 'EXPIRED_LOT': return v.expired && v.onHand.gt(ZERO);
+      default: return true;
+    }
   }
 
   async listMovements(

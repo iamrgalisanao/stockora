@@ -7,6 +7,7 @@ export * from './catalog';
 export * from './suppliers';
 export * from './warehouses';
 export * from './inventory';
+export * from './positions';
 export * from './receiving';
 export * from './releases';
 export * from './transfers';

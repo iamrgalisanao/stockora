@@ -12,8 +12,11 @@ import {
 import { MovementType } from '@prisma/client';
 import {
   BalanceResponse,
+  InventoryPositionRow,
   MovementResponse,
   PERMISSIONS,
+  POSITION_FILTERS,
+  PositionFilter,
   ReconciliationResult,
   StockCardResponse,
 } from '@iw/contracts';
@@ -42,6 +45,20 @@ export class InventoryController {
     @Query('productId') productId?: string,
   ): Promise<BalanceResponse[]> {
     return this.query.listBalances(user.organizationId, user, { warehouseId, productId });
+  }
+
+  @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
+  @Get('positions')
+  positions(
+    @CurrentUser() user: RequestUser,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('productId') productId?: string,
+    @Query('q') q?: string,
+    @Query('filter') filter?: string,
+    @Query('hasStock') hasStock?: string,
+  ): Promise<InventoryPositionRow[]> {
+    const parsed = filter && (POSITION_FILTERS as readonly string[]).includes(filter) ? (filter as PositionFilter) : undefined;
+    return this.query.listPositions(user.organizationId, user, { warehouseId, productId, q, filter: parsed, hasStock: hasStock === 'true' });
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
