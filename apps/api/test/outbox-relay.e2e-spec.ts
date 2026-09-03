@@ -56,8 +56,8 @@ describe('Outbox relay (e2e, 2D.1B)', () => {
   beforeEach(async () => {
     registry.clear();
     relay.config.jitterMs = 0; relay.config.maxAttempts = 8; relay.config.baseRetryMs = 1000; relay.config.batchSize = 50;
-    // Isolate each test: only this spec's org rows, and only this spec creates receipts.
-    await prisma.consumerReceipt.deleteMany({});
+    // Isolate each test to this spec's org rows. (No global receipt wipe — each test uses fresh event
+    // ids, and wiping all receipts would race concurrently-running specs under maxWorkers.)
     await prisma.outboxEvent.deleteMany({ where: { organizationId: org } });
   });
 

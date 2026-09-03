@@ -65,7 +65,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2D.1B — Relay + Delivery Semantics (DB-backed worker: claim/lease with `FOR UPDATE SKIP LOCKED` + crash recovery; at-least-once delivery to a many-per-type consumer registry with per-consumer receipts; exponential backoff + dead-letter; thin poller; org-scoped `/outbox/health`):** ✅ [docs/PHASE-2D1B-RELAY.md](docs/PHASE-2D1B-RELAY.md)
   - **2D.1C — First Domain Integrations (expiry facts + cycle-count completion enqueue events in the same tx as the domain fact; OperationalFactProjection internal consumer; outbox ops view + permission-gated manual retry):** ✅ [docs/PHASE-2D1C-INTEGRATIONS.md](docs/PHASE-2D1C-INTEGRATIONS.md)
 - **✅ 2D.1 — Events / Transactional Outbox complete.**
-- **Next:** 2D.2 Notifications (notification consumer over the domain outbox → delivery channels).
+- **2D.2 — Notifications** (outbox consumer → rule engine → scoped notifications → channels; [ADR 0011](docs/adr/0011-notifications.md)):
+  - **2D.2A — Notification Core + In-App Inbox (Notification/NotificationRecipient; explicit org/warehouse-scoped routing rules; outbox NotificationConsumer with idempotent creation; personal inbox APIs + in-app inbox UI; no external channels):** ✅ [docs/PHASE-2D2A-NOTIFICATIONS-CORE.md](docs/PHASE-2D2A-NOTIFICATIONS-CORE.md)
+- **Next:** 2D.2B External Delivery Framework + Email (NotificationDelivery + dispatcher + preferences + first outbound channel).
 - Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working

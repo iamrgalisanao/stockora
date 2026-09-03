@@ -67,6 +67,8 @@ import type {
   InventoryPositionRow,
   OutboxHealthResponse,
   OutboxEventListItem,
+  NotificationResponse,
+  UnreadCountResponse,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -359,6 +361,14 @@ export const api = {
     health: () => request<OutboxHealthResponse>('/outbox/health'),
     events: (limit = 50) => request<OutboxEventListItem[]>(`/outbox/events?limit=${limit}`),
     retry: (id: string) => request<{ ok: true }>(`/outbox/${id}/retry`, { method: 'POST' }),
+  },
+
+  notifications: {
+    list: (unread = false) => request<NotificationResponse[]>(`/notifications${unread ? '?unread=true' : ''}`),
+    unreadCount: () => request<UnreadCountResponse>('/notifications/unread-count'),
+    read: (id: string) => request<{ ok: true }>(`/notifications/${id}/read`, { method: 'POST' }),
+    readAll: () => request<{ updated: number }>('/notifications/read-all', { method: 'POST' }),
+    dismiss: (id: string) => request<{ ok: true }>(`/notifications/${id}/dismiss`, { method: 'POST' }),
   },
 
   dashboard: () => request<DashboardSummary>('/dashboard/summary'),

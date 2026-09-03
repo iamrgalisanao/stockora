@@ -1417,6 +1417,55 @@ model OperationalFactProjection {
   @@map("operational_fact_projections")
 }
 
+// ---------------------------------------------------------------------------
+// Notifications (Phase 2D.2, ADR 0011) — built by an outbox consumer + rule engine, never in domain code.
+// One semantic Notification per (event, rule); NotificationRecipient fans out to users with independent
+// read/dismiss state. External channels (NotificationDelivery/Preference) arrive in 2D.2B.
+// ---------------------------------------------------------------------------
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Notification {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @map("organization_id") @db.Uuid
+  eventId        String               @map("event_id") @db.Uuid
+  ruleKey        String               @map("rule_key")
+  type           String
+  title          String
+  message        String
+  severity       NotificationSeverity
+  entityType     String?              @map("entity_type")
+  entityId       String?              @map("entity_id") @db.Uuid
+  warehouseId    String?              @map("warehouse_id") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  recipients NotificationRecipient[]
+
+  // Idempotent creation: one notification per business fact per rule (ADR 0011 §7).
+  @@unique([eventId, ruleKey])
+  @@index([organizationId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String    @id @default(uuid()) @db.Uuid
+  notificationId String    @map("notification_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  readAt         DateTime? @map("read_at")
+  dismissedAt    DateTime? @map("dismissed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt])
+  @@map("notification_recipients")
+}
+
 model WarehouseLocation {
   id              String   @id @default(uuid()) @db.Uuid
   organizationId  String   @map("organization_id") @db.Uuid
