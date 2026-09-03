@@ -24,6 +24,18 @@ export const DOMAIN_EVENT_TYPES = [
 ] as const;
 export type DomainEventType = (typeof DOMAIN_EVENT_TYPES)[number];
 
+/** Outbox queue health (2D.1B). Observable independently of the domain transaction; org-scoped. */
+export interface OutboxHealthResponse {
+  pending: number;
+  processing: number;
+  retrying: number; // FAILED, awaiting a retry
+  deadLetter: number;
+  published: number;
+  oldestPendingAgeSeconds: number | null;
+  lastPublishedAt: string | null;
+  expiredLeaseCount: number; // PROCESSING rows past their lease — early signal of worker crashes
+}
+
 /** A read view of an outbox row (ops surface — 2D.1C). Payload is the event snapshot. */
 export interface OutboxEventResponse {
   id: string;
