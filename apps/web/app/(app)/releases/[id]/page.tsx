@@ -38,6 +38,29 @@ export default function ReleaseDetailPage() {
     }
   }
 
+  // Posting a batch release surfaces two FEFO paths explicitly (ADR 0008): a non-FEFO lot selection needs
+  // an override reason, and a plan gone stale (409) needs a refresh — neither hidden behind a raw error.
+  async function postRelease(reason?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      setRelease(await api.releases.post(id, reason));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Action failed';
+      if (/reason is required to override FEFO/i.test(msg)) {
+        const r = window.prompt('This lot selection bypasses FEFO order. Enter a reason to override:');
+        if (r && r.trim()) { setBusy(false); return postRelease(r.trim()); }
+        setError('FEFO override cancelled — an earlier-expiring lot is available.');
+      } else if (/stale|no longer has enough/i.test(msg)) {
+        setError('Stock changed since this allocation was generated. Refresh the FEFO plan and try again.');
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (error && !release) return <div className="card error">{error}</div>;
   if (!release || !user) return <div className="card muted">Loading…</div>;
 
@@ -110,7 +133,7 @@ export default function ReleaseDetailPage() {
             <span className="muted">Awaiting approval by an authorized approver.</span>
           )}
           {s === 'APPROVED' && canRelease && (
-            <button className="btn" disabled={busy} onClick={() => act(() => api.releases.post(id))}>Release to stock</button>
+            <button className="btn" disabled={busy} onClick={() => postRelease()}>Release to stock</button>
           )}
           {['DRAFT', 'FOR_APPROVAL', 'APPROVED'].includes(s) && canRelease && (
             <button className="btn secondary" disabled={busy} onClick={() => act(() => api.releases.cancel(id))}>Cancel</button>

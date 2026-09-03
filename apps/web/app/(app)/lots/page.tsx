@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { LotResponse, LotStatus, WarehouseResponse } from '@iw/contracts';
 import { LOT_STATUSES } from '@iw/contracts';
 import { api } from '../../../lib/api';
+import { ExpiryBadge } from '../../../components/ExpiryBadge';
 
 const statusBadge = (s: LotStatus) => (s === 'ACTIVE' ? 'ok' : s === 'CLOSED' ? 'muted' : 'warn');
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString() : '—');
@@ -79,7 +80,7 @@ export default function LotsPage() {
                   <td>{l.productSku} — {l.productName}</td>
                   <td><span className={`badge ${statusBadge(l.status)}`}>{l.status}</span></td>
                   <td>{fmtDate(l.manufacturedAt)}</td>
-                  <td>{fmtDate(l.expiryDate)}</td>
+                  <td>{fmtDate(l.expiryDate)} {l.expiryState !== 'NO_EXPIRY' && <ExpiryBadge state={l.expiryState} />}</td>
                   <td className="num">{l.onHand}</td>
                   <td className="num">{l.quarantined}</td>
                   <td className="num">{l.damaged}</td>
