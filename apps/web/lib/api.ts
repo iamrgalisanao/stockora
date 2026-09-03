@@ -78,6 +78,9 @@ import type {
   SerialReconciliationResult,
   SerialHistoryResponse,
   SupplierPerformanceResponse,
+  SupplierAnalyticsPolicyResponse,
+  SupplierScorecardResponse,
+  PreferredSupplierComparisonResponse,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -264,6 +267,21 @@ export const api = {
     const qs = q.toString();
     return request<SupplierPerformanceResponse>(`/analytics/suppliers${qs ? `?${qs}` : ''}`);
   },
+  supplierScorecard: (id: string, filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<SupplierScorecardResponse>(`/analytics/suppliers/${id}/scorecard${qs ? `?${qs}` : ''}`);
+  },
+  preferredSupplierComparison: (filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<PreferredSupplierComparisonResponse>(`/analytics/suppliers/preferred-comparison${qs ? `?${qs}` : ''}`);
+  },
+  supplierWeights: () => request<SupplierAnalyticsPolicyResponse>('/analytics/suppliers/policy'),
+  saveSupplierWeights: (w: { fillRate: number; onTime: number; leadTime: number; price: number; quality: number }) =>
+    request<SupplierAnalyticsPolicyResponse>('/analytics/suppliers/policy', { method: 'PUT', body: JSON.stringify(w) }),
   positions: (filters: Record<string, string> = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);

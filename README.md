@@ -77,7 +77,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ 2D.3 — Serial Tracking complete.**
 - **2D.4 — Supplier Analytics** (transparent, receipt-traceable supplier performance; [metric definitions](docs/analytics/SUPPLIER-PERFORMANCE-METRICS.md)):
   - **2D.4A — Supplier Performance Read Model (posted-receipts-only analytics over fill-rate, on-time, lead-time, price-vs-quoted-cost, and reject/return quality; transparent renormalized-weight score with every sub-score + weight returned; period/product/warehouse filters + org/scope isolation; coverage surfacing for the optional order-date / expected-delivery / reference-cost inputs; supplier comparison table UI + optional receipt date capture):** ✅ [docs/PHASE-2D4A-SUPPLIER-READ-MODEL.md](docs/PHASE-2D4A-SUPPLIER-READ-MODEL.md)
-  - **Next:** 2D.4B — Scorecards + trends (org-configurable weights, period-over-period, supplier/product breakdown, preferred-supplier comparison), then 2D.4C — UX.
+  - **2D.4B — Scorecards + Trends (org-configurable relative weights renormalized over available metrics with fully-explainable components; period-over-period trends vs the equal-length prior window with direction metadata + separate coverage movement; per-product breakdown on the same engine; advisory preferred-vs-observed comparison off the authoritative `InventoryPolicy.preferredSupplierId`; sample-size labels; scorecard + weights + comparison UI):** ✅ [docs/PHASE-2D4B-SCORECARDS-TRENDS.md](docs/PHASE-2D4B-SCORECARDS-TRENDS.md)
+  - **Next:** 2D.4C — richer UX (dashboard, charts/trends over time, drill-down to receipts/returns).
 - Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
