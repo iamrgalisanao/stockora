@@ -104,6 +104,76 @@ export interface SupplierScorecardResponse {
   products: SupplierPerformanceRow[]; // per-product breakdown, same period, reconciles to the aggregate
 }
 
+// ---- Time-series trends (2D.4C) ----
+
+export const TREND_GRANULARITIES = ['DAILY', 'WEEKLY', 'MONTHLY'] as const;
+export type TrendGranularity = (typeof TREND_GRANULARITIES)[number];
+
+/** One time bucket, computed with the exact same metric definitions as the scorecard. */
+export interface SupplierTrendBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  receiptsCount: number;
+  linesCount: number;
+  performanceScore: number | null;
+  fillRatePct: number | null;
+  onTimeDeliveryPct: number | null;
+  averageLeadTimeDays: number | null;
+  priceVariancePct: number | null;
+  returnRatePct: number;
+  coverage: SupplierCoverage;
+}
+
+export interface SupplierTrendSeriesResponse {
+  supplierId: string;
+  from: string;
+  to: string;
+  granularity: TrendGranularity;
+  weights: SupplierScoreWeights;
+  /** Direction metadata reused so lower-is-better metrics render correctly. */
+  metrics: Array<{ key: string; label: string; higherIsBetter: boolean }>;
+  buckets: SupplierTrendBucket[];
+}
+
+// ---- Metric evidence / drill-down (2D.4C) ----
+
+export const EVIDENCE_METRICS = ['FILL_RATE', 'ON_TIME', 'LEAD_TIME', 'PRICE', 'QUALITY'] as const;
+export type EvidenceMetric = (typeof EVIDENCE_METRICS)[number];
+
+/** One operational record included in a metric's numerator/denominator (only the relevant fields are set). */
+export interface SupplierEvidenceRecord {
+  receiptId: string;
+  receiptNumber: string;
+  receivingDate: string;
+  warehouseId: string;
+  productId: string | null;
+  productSku: string | null;
+  includedInNumerator: boolean;
+  expectedQty?: string;
+  receivedQty?: string;
+  rejectedQty?: string;
+  orderDate?: string | null;
+  expectedDeliveryDate?: string | null;
+  leadTimeDays?: number;
+  onTime?: boolean;
+  unitCost?: string; // cost.view only
+  referenceCost?: string; // cost.view only
+  variancePct?: number;
+}
+
+export interface SupplierEvidenceResponse {
+  supplierId: string;
+  metric: EvidenceMetric;
+  from: string;
+  to: string;
+  label: string;
+  /** The reconciled metric — numerator/denominator that produce the displayed value. */
+  numerator: number;
+  denominator: number;
+  value: number | null;
+  records: SupplierEvidenceRecord[];
+}
+
 /** Advisory preferred-vs-observed comparison (2D.4B) — never rewrites the stored preference. */
 export interface PreferredSupplierComparisonRow {
   productId: string;
