@@ -46,7 +46,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ Phase 2B — Stock Commitment & Reverse Logistics complete.**
 - **2C.1 — Batch / Lot Tracking** (lot becomes inventory grain; [ADR 0007](docs/adr/0007-batch-lot-tracking.md)):
   - **2C.1A — Lot Core + Receiving (InventoryLot entity + uniqueness/lifecycle/immutability; balance & ledger lot grain; posting-time enforcement; opening + receiving lot capture; legacy backfill; lot query API):** ✅ [docs/PHASE-2C1A-LOT-CORE.md](docs/PHASE-2C1A-LOT-CORE.md)
-  - **Next:** 2C.1B Lot Propagation (releases/transfers/adjustments/counts/returns become lot-aware).
+  - **2C.1B — Lot Propagation (releases with lot allocations [the FEFO seam]; transfers preserve lot identity; adjustments/counts/returns lot-aware; reservations aggregate availability across lots):** ✅ [docs/PHASE-2C1B-LOT-PROPAGATION.md](docs/PHASE-2C1B-LOT-PROPAGATION.md)
+  - **Next:** 2C.1C Traceability UX (lot explorer, stock-by-lot, movement genealogy).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

@@ -20,6 +20,7 @@ export class CreateReturnLineDto {
   @IsUUID() productId!: string;
   @IsOptional() @IsUUID() variantId?: string;
   @IsOptional() @IsUUID() locationId?: string;
+  @IsOptional() @IsUUID() lotId?: string; // required for batch-tracked products (ADR 0007)
   @IsNumber(q) @IsPositive() quantity!: number;
 }
 

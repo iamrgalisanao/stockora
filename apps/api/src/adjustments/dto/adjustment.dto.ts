@@ -23,6 +23,7 @@ export class AdjustmentItemInputDto {
   @IsNumber(qty) @IsPositive() quantity!: number;
   @IsOptional() @IsNumber(qty) @Min(0) unitCost?: number;
   @IsOptional() @IsUUID() locationId?: string;
+  @IsOptional() @IsUUID() lotId?: string; // required for batch-tracked products (ADR 0007)
   @IsOptional() @IsString() @MaxLength(500) remarks?: string;
 }
 

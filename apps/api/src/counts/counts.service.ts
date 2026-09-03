@@ -54,8 +54,18 @@ export class CountsService {
   async create(organizationId: string, user: RequestUser, dto: CreateCountDto): Promise<CountResponse> {
     await this.warehouses.assertSelectableForCreate(organizationId, user, dto.warehouseId);
 
-    // Snapshot expected quantities.
-    const snapshot: Array<{ productId: string; variantId: string | null; systemQty: Prisma.Decimal; unitCost: Prisma.Decimal }> = [];
+    // Snapshot expected quantities PER LOT (ADR 0007): batch-tracked stock is counted product+lot, so
+    // lot redistribution with a correct product total still surfaces as variance. Non-batch stock has one
+    // NIL-lot row per product. Each balance row becomes one count item carrying its lotId.
+    const snapshot: Array<{ productId: string; variantId: string | null; lotId: string | null; systemQty: Prisma.Decimal; unitCost: Prisma.Decimal }> = [];
+    const pushRow = (b: { productId: string; variantId: string; lotId: string; onHand: Prisma.Decimal; avgCost: Prisma.Decimal }) =>
+      snapshot.push({
+        productId: b.productId,
+        variantId: b.variantId === NIL_UUID ? null : b.variantId,
+        lotId: b.lotId === NIL_UUID ? null : b.lotId,
+        systemQty: new Prisma.Decimal(b.onHand),
+        unitCost: new Prisma.Decimal(b.avgCost),
+      });
     if (dto.productIds && dto.productIds.length > 0) {
       const products = await this.prisma.product.findMany({
         where: { organizationId, id: { in: dto.productIds } },
@@ -65,30 +75,22 @@ export class CountsService {
         throw new BadRequestException('One or more products not found');
       }
       for (const productId of [...new Set(dto.productIds)]) {
-        const bal = await this.prisma.inventoryBalance.findFirst({
-          where: { organizationId, productId, variantId: NIL_UUID, warehouseId: dto.warehouseId },
-          select: { onHand: true, avgCost: true },
+        const rows = await this.prisma.inventoryBalance.findMany({
+          where: { organizationId, productId, warehouseId: dto.warehouseId },
+          select: { productId: true, variantId: true, lotId: true, onHand: true, avgCost: true },
         });
-        snapshot.push({
-          productId,
-          variantId: null,
-          systemQty: new Prisma.Decimal(bal?.onHand ?? 0),
-          unitCost: new Prisma.Decimal(bal?.avgCost ?? 0),
-        });
+        if (rows.length === 0) {
+          snapshot.push({ productId, variantId: null, lotId: null, systemQty: new Prisma.Decimal(0), unitCost: new Prisma.Decimal(0) });
+        } else {
+          rows.forEach(pushRow);
+        }
       }
     } else {
       const balances = await this.prisma.inventoryBalance.findMany({
         where: { organizationId, warehouseId: dto.warehouseId },
-        select: { productId: true, variantId: true, onHand: true, avgCost: true },
+        select: { productId: true, variantId: true, lotId: true, onHand: true, avgCost: true },
       });
-      for (const b of balances) {
-        snapshot.push({
-          productId: b.productId,
-          variantId: b.variantId === NIL_UUID ? null : b.variantId,
-          systemQty: new Prisma.Decimal(b.onHand),
-          unitCost: new Prisma.Decimal(b.avgCost),
-        });
-      }
+      balances.forEach(pushRow);
     }
 
     const countNumber = await this.nextNumber(organizationId);
@@ -106,6 +108,7 @@ export class CountsService {
             organizationId,
             productId: s.productId,
             variantId: s.variantId,
+            lotId: s.lotId,
             systemQty: s.systemQty,
             unitCost: s.unitCost,
           })),
@@ -187,15 +190,15 @@ export class CountsService {
     if (count.status === CountStatus.POSTED) return this.toResponse(count, user);
     this.assertStatus(count, [CountStatus.APPROVED], 'posted');
 
-    const inLines: Array<{ productId: string; variantId: string | null; quantity: string; unitCost: string }> = [];
-    const outLines: Array<{ productId: string; variantId: string | null; quantity: string }> = [];
+    const inLines: Array<{ productId: string; variantId: string | null; quantity: string; unitCost: string; lotId: string | null }> = [];
+    const outLines: Array<{ productId: string; variantId: string | null; quantity: string; lotId: string | null }> = [];
     for (const item of count.items) {
       const counted = item.countedQty ?? item.systemQty;
       const variance = new Prisma.Decimal(counted).sub(item.systemQty);
       if (variance.gt(0)) {
-        inLines.push({ productId: item.productId, variantId: item.variantId, quantity: variance.toString(), unitCost: item.unitCost.toString() });
+        inLines.push({ productId: item.productId, variantId: item.variantId, quantity: variance.toString(), unitCost: item.unitCost.toString(), lotId: item.lotId });
       } else if (variance.lt(0)) {
-        outLines.push({ productId: item.productId, variantId: item.variantId, quantity: variance.abs().toString() });
+        outLines.push({ productId: item.productId, variantId: item.variantId, quantity: variance.abs().toString(), lotId: item.lotId });
       }
     }
 
@@ -281,6 +284,7 @@ export class CountsService {
         productSku: i.product.sku,
         productName: i.product.name,
         variantId: i.variantId,
+        lotId: i.lotId ?? null,
         countedQty: counted !== null ? counted.toString() : null,
         recountQty: i.recountQty !== null ? i.recountQty.toString() : null,
         remarks: i.remarks,

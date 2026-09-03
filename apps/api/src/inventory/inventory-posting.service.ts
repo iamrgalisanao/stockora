@@ -229,20 +229,21 @@ export class InventoryPostingService {
     const specs: MovementSpec[] = [];
     input.lines.forEach((line, i) => {
       const qty = D(line.quantity);
-      // Clear in-transit at the source (no cost effect).
+      // Clear in-transit at the source (no cost effect). Same lot as dispatch (ADR 0007).
       specs.push({
         movementType: MovementType.TRANSFER_IN,
         productId: line.productId,
         variantId: line.variantId ?? null,
         warehouseId: input.sourceWarehouseId,
         quantity: qty,
+        lotId: line.lotId ?? null,
         deltas: { onHand: ZERO, reserved: ZERO, inTransit: qty.neg(), quarantined: ZERO, damaged: ZERO },
         referenceType: 'stock_transfer',
         referenceId: ref,
         idempotencyKey: i === 0 ? ctx.idempotencyKey ?? null : null,
         reason: ctx.reason ?? null,
       });
-      // Raise on_hand at the destination at the carried cost.
+      // Raise on_hand at the destination at the carried cost, under the SAME lot id.
       specs.push({
         movementType: MovementType.TRANSFER_IN,
         productId: line.productId,
@@ -251,6 +252,7 @@ export class InventoryPostingService {
         locationId: line.locationId ?? null,
         quantity: qty,
         unitCost: line.unitCost != null ? D(line.unitCost) : null,
+        lotId: line.lotId ?? null,
         deltas: { onHand: qty, reserved: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO },
         referenceType: 'stock_transfer',
         referenceId: ref,

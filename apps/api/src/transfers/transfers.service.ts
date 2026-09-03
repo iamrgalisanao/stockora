@@ -96,6 +96,7 @@ export class TransfersService {
             productId: i.productId,
             variantId: i.variantId ?? null,
             quantity: i.quantity,
+            lotId: i.lotId ?? null,
             remarks: i.remarks ?? null,
           })),
         },
@@ -140,6 +141,7 @@ export class TransfersService {
             productId: i.productId,
             variantId: i.variantId ?? null,
             quantity: i.quantity,
+            lotId: i.lotId ?? null,
             remarks: i.remarks ?? null,
           })),
         });
@@ -206,6 +208,7 @@ export class TransfersService {
       productId: i.productId,
       variantId: i.variantId,
       quantity: i.quantity,
+      lotId: i.lotId, // lot identity is preserved across the transfer (ADR 0007)
     }));
 
     const movements = await this.posting.transferDispatch(
@@ -253,11 +256,12 @@ export class TransfersService {
       .map((i) => ({
         productId: i.productId,
         variantId: i.variantId,
+        lotId: i.lotId,
         remaining: new Prisma.Decimal(i.qtyDispatched).sub(i.qtyReceived),
         unitCost: i.dispatchUnitCost,
       }))
       .filter((l) => l.remaining.gt(0))
-      .map((l) => ({ productId: l.productId, variantId: l.variantId, quantity: l.remaining, unitCost: l.unitCost }));
+      .map((l) => ({ productId: l.productId, variantId: l.variantId, quantity: l.remaining, unitCost: l.unitCost, lotId: l.lotId }));
 
     if (lines.length === 0) throw new BadRequestException('Nothing in transit to receive');
 

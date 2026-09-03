@@ -17,6 +17,7 @@ export class TransferItemInputDto {
   @IsUUID() productId!: string;
   @IsOptional() @IsUUID() variantId?: string;
   @IsNumber(qty) @IsPositive() quantity!: number;
+  @IsOptional() @IsUUID() lotId?: string; // required for batch-tracked products; one lot per line (ADR 0007)
   @IsOptional() @IsString() @MaxLength(500) remarks?: string;
 }
 

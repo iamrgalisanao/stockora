@@ -386,10 +386,27 @@ model StockReleaseItem {
   release StockRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
   product Product      @relation(fields: [productId], references: [id])
   reservationLine ReservationLine? @relation(fields: [reservationLineId], references: [id], onDelete: SetNull)
+  allocations ReleaseAllocation[]
 
   @@index([releaseId])
   @@index([reservationLineId])
   @@map("stock_release_items")
+}
+
+/// Lot allocation for a release line (2C.1B, ADR 0007). Batch-tracked lines carry allocations whose
+/// quantities sum to the released quantity; this is the exact seam FEFO will later auto-generate.
+/// `lotId` is a scalar (validated at posting) — no Prisma relation, matching the balance projection.
+model ReleaseAllocation {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  releaseItemId  String  @map("release_item_id") @db.Uuid
+  lotId          String  @map("lot_id") @db.Uuid
+  quantity       Decimal @db.Decimal(18, 4)
+
+  releaseItem StockReleaseItem @relation(fields: [releaseItemId], references: [id], onDelete: Cascade)
+
+  @@index([releaseItemId])
+  @@map("release_allocations")
 }
 
 // ---------------------------------------------------------------------------
@@ -444,6 +461,9 @@ model StockTransferItem {
   qtyReceived      Decimal @default(0) @map("qty_received") @db.Decimal(18, 4)
   // Source WAC captured at dispatch, carried to the destination on receipt.
   dispatchUnitCost Decimal @default(0) @map("dispatch_unit_cost") @db.Decimal(18, 4)
+  // Lot identity (2C.1B). One lot per line for batch products (multi-lot = multiple lines); carried
+  // unchanged through dispatch + receive. Scalar (validated at posting), null for non-batch.
+  lotId            String? @map("lot_id") @db.Uuid
   remarks          String?
 
   transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
@@ -524,6 +544,8 @@ model StockAdjustmentItem {
   quantity       Decimal             @default(0) @db.Decimal(18, 4)
   unitCost       Decimal             @default(0) @map("unit_cost") @db.Decimal(18, 4)
   locationId     String?             @map("location_id") @db.Uuid
+  // Lot identity (2C.1B) — required for batch products; a positive adjustment must target an existing lot.
+  lotId          String?             @map("lot_id") @db.Uuid
   remarks        String?
 
   adjustment StockAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
@@ -588,6 +610,8 @@ model StockCountItem {
   countedQty     Decimal? @map("counted_qty") @db.Decimal(18, 4)
   recountQty     Decimal? @map("recount_qty") @db.Decimal(18, 4)
   unitCost       Decimal  @default(0) @map("unit_cost") @db.Decimal(18, 4)
+  // Lot identity (2C.1B). Batch-tracked counts snapshot one item per lot; variance posts against the lot.
+  lotId          String?  @map("lot_id") @db.Uuid
   remarks        String?
 
   count   StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
@@ -1069,6 +1093,8 @@ model ReturnLine {
   // NIL-UUID sentinel = base product (matches the balance projection grain).
   variantId        String  @map("variant_id") @db.Uuid
   locationId       String? @map("location_id") @db.Uuid
+  // Lot identity (2C.1B) — required for batch products at intake; every disposition inherits it.
+  lotId            String? @map("lot_id") @db.Uuid
   quantity         Decimal @db.Decimal(18, 4) // declared at DRAFT
   receivedQuantity Decimal @default(0) @map("received_quantity") @db.Decimal(18, 4)
   disposedQuantity Decimal @default(0) @map("disposed_quantity") @db.Decimal(18, 4)
