@@ -126,6 +126,47 @@ export class CountsService {
     return this.get(organizationId, user, count.id);
   }
 
+  /**
+   * Snapshot exactly ONE counting scope for a cycle-count task (2C.3B, ADR 0009 §6). Batch scope →
+   * warehouse/product/variant/lot; non-lot scope → warehouse/product/variant (lotId = NIL). The count is
+   * the single authoritative StockCount for the task (unique cycleCountTaskId); it flows through the same
+   * count/submit/approve/post path — no duplicate variance logic.
+   */
+  async createCycleCount(
+    organizationId: string,
+    user: RequestUser,
+    scope: { warehouseId: string; productId: string; variantId: string; lotId: string },
+    cycleCountTaskId: string,
+  ): Promise<CountResponse> {
+    const rows = await this.prisma.inventoryBalance.findMany({
+      where: { organizationId, warehouseId: scope.warehouseId, productId: scope.productId, variantId: scope.variantId, lotId: scope.lotId },
+      select: { onHand: true, avgCost: true },
+    });
+    const items = rows.length
+      ? rows.map((r) => ({
+          organizationId, productId: scope.productId,
+          variantId: scope.variantId === NIL_UUID ? null : scope.variantId,
+          lotId: scope.lotId === NIL_UUID ? null : scope.lotId,
+          systemQty: new Prisma.Decimal(r.onHand), unitCost: new Prisma.Decimal(r.avgCost),
+        }))
+      : [{
+          organizationId, productId: scope.productId,
+          variantId: scope.variantId === NIL_UUID ? null : scope.variantId,
+          lotId: scope.lotId === NIL_UUID ? null : scope.lotId,
+          systemQty: new Prisma.Decimal(0), unitCost: new Prisma.Decimal(0),
+        }];
+
+    const countNumber = await this.nextNumber(organizationId);
+    const count = await this.prisma.stockCount.create({
+      data: {
+        organizationId, countNumber, warehouseId: scope.warehouseId, type: CountType.CYCLE,
+        isBlind: false, requestorId: user.userId, cycleCountTaskId,
+        items: { create: items },
+      },
+    });
+    return this.get(organizationId, user, count.id);
+  }
+
   async enterCounts(
     organizationId: string,
     user: RequestUser,
@@ -217,13 +258,21 @@ export class CountsService {
     }
 
     await this.prisma.stockCount.update({ where: { id }, data: { status: CountStatus.POSTED, postedAt: new Date() } });
+    // Cycle-counting completion (2C.3B, ADR 0009 §6): a task COMPLETES only after its count POSTS. The
+    // variance above already went through the ledger; this only flips the planning task + stamps lastCounted.
+    if (count.cycleCountTaskId) {
+      await this.prisma.cycleCountTask.update({
+        where: { id: count.cycleCountTaskId },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+    }
     await this.audit.record({
       organizationId,
       userId: user.userId,
       action: 'stock_count.posted',
       entityType: 'stock_count',
       entityId: id,
-      newValue: { in: inLines.length, out: outLines.length },
+      newValue: { in: inLines.length, out: outLines.length, cycleCountTaskId: count.cycleCountTaskId ?? null },
     });
     return this.get(organizationId, user, id);
   }
@@ -311,6 +360,7 @@ export class CountsService {
       approvedById: c.approvedById,
       postedAt: c.postedAt ? c.postedAt.toISOString() : null,
       createdAt: c.createdAt.toISOString(),
+      cycleCountTaskId: c.cycleCountTaskId,
       items,
     };
     if (canVal && !hideSystem) res.varianceValue = varianceValue.toDecimalPlaces(4).toString();

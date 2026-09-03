@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WarehousesService } from '../warehouses/warehouses.service';
+import { CountsService } from '../counts/counts.service';
 import type { RequestUser } from '../common/request-user';
 import { NIL_UUID } from '../inventory/inventory.constants';
 import { businessToday, toBusinessDate } from '../common/business-date';
@@ -46,6 +47,7 @@ export class CycleCountService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
+    private readonly counts: CountsService,
   ) {}
 
   // ---- Policy -------------------------------------------------------------
@@ -417,6 +419,103 @@ export class CycleCountService {
     if (!task) throw new NotFoundException('Cycle-count task not found');
     await this.warehouses.assertAccess(organizationId, user, task.warehouseId);
     return this.oneTask(organizationId, task.id);
+  }
+
+  // ---- Execution (delegates to the Physical Count engine) -----------------
+
+  /**
+   * Start a task: create the ONE authoritative StockCount(type=CYCLE) for its scope and move the task to
+   * IN_PROGRESS. Concurrency/replay safe — the unique cycleCountTaskId means a second create loses (P2002)
+   * and adopts the winner's count, and a replayed start returns the already-linked count (ADR 0009 §6).
+   */
+  async startTask(organizationId: string, user: RequestUser, id: string): Promise<CycleCountTaskResponse> {
+    const task = await this.prisma.cycleCountTask.findFirst({ where: { id, organizationId } });
+    if (!task) throw new NotFoundException('Cycle-count task not found');
+    await this.warehouses.assertAccess(organizationId, user, task.warehouseId);
+    // Replayed start on an in-flight task → return the same count (idempotent). A completed or cancelled
+    // task cannot be (re)started.
+    if (task.status === 'IN_PROGRESS' && task.physicalCountId) return this.oneTask(organizationId, id);
+    if (task.status !== 'PENDING' && task.status !== 'ASSIGNED') {
+      throw new BadRequestException(`A ${task.status} task cannot be started`);
+    }
+    const scope = { warehouseId: task.warehouseId, productId: task.productId, variantId: task.variantId, lotId: task.lotId };
+    try {
+      const count = await this.counts.createCycleCount(organizationId, user, scope, task.id);
+      await this.prisma.cycleCountTask.update({ where: { id }, data: { physicalCountId: count.id, status: 'IN_PROGRESS' } });
+      await this.audit.record({
+        organizationId, userId: user.userId, action: 'cycle_count.started', entityType: 'cycle_count_task',
+        entityId: id, newValue: { physicalCountId: count.id },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const existing = await this.prisma.stockCount.findFirst({ where: { organizationId, cycleCountTaskId: id }, select: { id: true } });
+        if (existing) {
+          await this.prisma.cycleCountTask.updateMany({ where: { id, physicalCountId: null }, data: { physicalCountId: existing.id, status: 'IN_PROGRESS' } });
+          return this.oneTask(organizationId, id);
+        }
+      }
+      throw e;
+    }
+    return this.oneTask(organizationId, id);
+  }
+
+  /**
+   * Cancel a task. An active count is never orphaned: this coordinated operation cancels the unposted
+   * StockCount too (ADR 0009 §6). A task whose count already posted is COMPLETED and cannot be cancelled.
+   */
+  async cancelTask(organizationId: string, user: RequestUser, id: string): Promise<CycleCountTaskResponse> {
+    const task = await this.prisma.cycleCountTask.findFirst({ where: { id, organizationId } });
+    if (!task) throw new NotFoundException('Cycle-count task not found');
+    await this.warehouses.assertAccess(organizationId, user, task.warehouseId);
+    if (task.status === 'COMPLETED') throw new BadRequestException('A completed task cannot be cancelled');
+    if (task.status === 'CANCELLED') return this.oneTask(organizationId, id);
+    if (task.physicalCountId) {
+      const count = await this.prisma.stockCount.findFirst({ where: { id: task.physicalCountId, organizationId }, select: { status: true } });
+      if (count?.status === 'POSTED') throw new BadRequestException('This task’s count is already posted; the task is complete and cannot be cancelled');
+      if (count && count.status !== 'CANCELLED') await this.counts.cancel(organizationId, user, task.physicalCountId);
+    }
+    await this.prisma.cycleCountTask.update({ where: { id }, data: { status: 'CANCELLED' } });
+    await this.audit.record({
+      organizationId, userId: user.userId, action: 'cycle_count.cancelled', entityType: 'cycle_count_task',
+      entityId: id, newValue: { physicalCountId: task.physicalCountId ?? null },
+    });
+    return this.oneTask(organizationId, id);
+  }
+
+  /**
+   * Recount a completed task: create a NEW task (source=RECOUNT, supersedesTaskId=original) and start it,
+   * producing a separate StockCount. The original task and its count history are never reopened (ADR 0009 §8).
+   */
+  async recount(organizationId: string, user: RequestUser, id: string): Promise<CycleCountTaskResponse> {
+    const orig = await this.prisma.cycleCountTask.findFirst({ where: { id, organizationId } });
+    if (!orig) throw new NotFoundException('Cycle-count task not found');
+    await this.warehouses.assertSelectableForCreate(organizationId, user, orig.warehouseId);
+    if (orig.status !== 'COMPLETED') throw new BadRequestException('Only a completed task can be recounted');
+    const cls = await this.prisma.productClassification.findUnique({
+      where: { organizationId_warehouseId_productId_variantId: { organizationId, warehouseId: orig.warehouseId, productId: orig.productId, variantId: orig.variantId } },
+      select: { abcClass: true },
+    });
+    const abcClass: ABCClass = cls?.abcClass ?? orig.abcClass;
+    let task;
+    try {
+      task = await this.prisma.cycleCountTask.create({
+        data: {
+          organizationId, warehouseId: orig.warehouseId, productId: orig.productId, variantId: orig.variantId, lotId: orig.lotId,
+          abcClass, priority: ABC_PRIORITY[abcClass], status: 'PENDING', source: 'RECOUNT', supersedesTaskId: orig.id,
+          dueAt: new Date(), createdById: user.userId,
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new BadRequestException('An active cycle-count task already exists for this scope');
+      }
+      throw e;
+    }
+    await this.audit.record({
+      organizationId, userId: user.userId, action: 'cycle_count.recount_created', entityType: 'cycle_count_task',
+      entityId: task.id, newValue: { supersedesTaskId: orig.id },
+    });
+    return this.startTask(organizationId, user, task.id);
   }
 
   // ---- Mapping helpers ----------------------------------------------------

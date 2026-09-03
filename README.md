@@ -55,7 +55,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ 2C.2 — Expiry + FEFO complete.**
 - **2C.3 — Cycle Counting** (scheduling / ABC planning over the lot-aware Physical Count engine; [ADR 0009](docs/adr/0009-cycle-counting.md)):
   - **2C.3A — ABC + Scheduling Core (ABCClass planning attribute; org/warehouse CycleCountPolicy; MANUAL + MOVEMENT_VELOCITY classification with configurable thresholds; coverage read model + business-date due calc; idempotent CycleCountTask generation with one-active-task-per-scope; history-preserving snapshots; basic assignment):** ✅ [docs/PHASE-2C3A-ABC-SCHEDULING.md](docs/PHASE-2C3A-ABC-SCHEDULING.md)
-- **Next:** 2C.3B Count Session Integration (start task → StockCount(type=CYCLE) → reconcile → complete).
+  - **2C.3B — Count Session Integration (start task → the one authoritative StockCount(type=CYCLE), scope-exact snapshot; complete only after POSTED via the existing ledger path; replay/concurrency-safe start; coordinated cancel; recounts as new superseding work):** ✅ [docs/PHASE-2C3B-COUNT-SESSION.md](docs/PHASE-2C3B-COUNT-SESSION.md)
+- **Next:** 2C.3C UX + Metrics (cycle-count dashboard, due/overdue worklists, assignment UI, coverage/accuracy metrics).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

@@ -589,6 +589,9 @@ model StockCount {
   requestorId    String?     @map("requestor_id") @db.Uuid
   approvedById   String?     @map("approved_by_id") @db.Uuid
   postedAt       DateTime?   @map("posted_at")
+  // Cycle-counting linkage (2C.3B, ADR 0009 §6): a CYCLE count is the one authoritative StockCount for a
+  // CycleCountTask. Unique — at most one count may attach to a task. Null for ordinary physical counts.
+  cycleCountTaskId String?   @unique @map("cycle_count_task_id") @db.Uuid
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
 

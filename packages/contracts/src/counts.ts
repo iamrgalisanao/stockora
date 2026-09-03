@@ -40,6 +40,7 @@ export interface CountResponse {
   postedAt: string | null;
   createdAt: string;
   varianceValue?: string; // gated by valuation.view
+  cycleCountTaskId?: string | null; // set when this CYCLE count executes a cycle-count task (2C.3B)
   items: CountItemResponse[];
 }
 
