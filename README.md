@@ -44,10 +44,11 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2B.2B — Inspection + Disposition (split quarantined stock across RESTOCK / DAMAGED / RETURN_TO_SUPPLIER / DISPOSE, each an immutable ledger posting; concurrency-safe, idempotent, deterministic status roll-up):** ✅ [docs/PHASE-2B2B-INSPECTION-DISPOSITION.md](docs/PHASE-2B2B-INSPECTION-DISPOSITION.md)
   - **2B.2C — UX + Visibility (return list/detail/create + disposition drawer with permission gating; quarantine drill-down on Stock Overview reconciling to the ledger balance):** ✅ [docs/PHASE-2B2C-RETURNS-UX.md](docs/PHASE-2B2C-RETURNS-UX.md)
 - **✅ Phase 2B — Stock Commitment & Reverse Logistics complete.**
-- **2C.1 — Batch / Lot Tracking** (lot becomes inventory grain; [ADR 0007](docs/adr/0007-batch-lot-tracking.md)):
+- **✅ 2C.1 — Batch / Lot Tracking complete** (lot is inventory grain; [ADR 0007](docs/adr/0007-batch-lot-tracking.md)):
   - **2C.1A — Lot Core + Receiving (InventoryLot entity + uniqueness/lifecycle/immutability; balance & ledger lot grain; posting-time enforcement; opening + receiving lot capture; legacy backfill; lot query API):** ✅ [docs/PHASE-2C1A-LOT-CORE.md](docs/PHASE-2C1A-LOT-CORE.md)
   - **2C.1B — Lot Propagation (releases with lot allocations [the FEFO seam]; transfers preserve lot identity; adjustments/counts/returns lot-aware; reservations aggregate availability across lots):** ✅ [docs/PHASE-2C1B-LOT-PROPAGATION.md](docs/PHASE-2C1B-LOT-PROPAGATION.md)
-  - **Next:** 2C.1C Traceability UX (lot explorer, stock-by-lot, movement genealogy).
+  - **2C.1C — Traceability UX (lot explorer, lot detail with per-warehouse stock + movement timeline & document links, shared operational lot picker):** ✅ [docs/PHASE-2C1C-TRACEABILITY-UX.md](docs/PHASE-2C1C-TRACEABILITY-UX.md)
+  - **Next:** 2C.2 Expiry + FEFO.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).

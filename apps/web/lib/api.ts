@@ -13,6 +13,9 @@ import type {
   ReservedBreakdownRow,
   ReturnResponse,
   QuarantineBreakdownRow,
+  LotResponse,
+  LotMovementRow,
+  PickableLot,
   AuthenticatedUser,
   AuthTokenResponse,
   BalanceResponse,
@@ -436,6 +439,20 @@ export const api = {
       request<ReturnResponse>(`/returns/${id}/dispositions`, { method: 'POST', body: JSON.stringify(body) }),
     quarantineBreakdown: (productId: string, warehouseId: string, variantId?: string) =>
       request<QuarantineBreakdownRow[]>(`/returns/quarantine-breakdown?productId=${productId}&warehouseId=${warehouseId}${variantId ? `&variantId=${variantId}` : ''}`),
+  },
+
+  lots: {
+    list: (filters: Record<string, string> = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+      const qs = p.toString();
+      return request<LotResponse[]>(`/lots${qs ? `?${qs}` : ''}`);
+    },
+    get: (id: string) => request<LotResponse>(`/lots/${id}`),
+    movements: (id: string) => request<LotMovementRow[]>(`/lots/${id}/movements`),
+    pickable: (productId: string, warehouseId: string, variantId?: string) =>
+      request<PickableLot[]>(`/lots/pickable?productId=${productId}&warehouseId=${warehouseId}${variantId ? `&variantId=${variantId}` : ''}`),
+    close: (id: string) => request<LotResponse>(`/lots/${id}/close`, { method: 'POST' }),
   },
 
   imports: {

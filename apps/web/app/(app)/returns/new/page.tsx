@@ -6,8 +6,9 @@ import Link from 'next/link';
 import type { ProductResponse, ReturnType, WarehouseResponse } from '@iw/contracts';
 import { RETURN_TYPES } from '@iw/contracts';
 import { api } from '../../../../lib/api';
+import { LotPicker } from '../../../../components/LotPicker';
 
-interface DraftLine { productId: string; quantity: string }
+interface DraftLine { productId: string; quantity: string; lotId: string }
 
 export default function NewReturnPage() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function NewReturnPage() {
   const [sourceReference, setSourceReference] = useState('');
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: '' }]);
+  const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: '', lotId: '' }]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -27,18 +28,20 @@ export default function NewReturnPage() {
     api.warehouses().then((w) => { setWarehouses(w); if (w[0]) setWarehouseId(w[0].id); }).catch(() => {});
   }, []);
 
+  const isBatch = (productId: string) => products.find((p) => p.id === productId)?.isBatchTracked ?? false;
   const setLine = (i: number, patch: Partial<DraftLine>) =>
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  const addLine = () => setLines((ls) => [...ls, { productId: '', quantity: '' }]);
+  const addLine = () => setLines((ls) => [...ls, { productId: '', quantity: '', lotId: '' }]);
   const removeLine = (i: number) => setLines((ls) => (ls.length === 1 ? ls : ls.filter((_, idx) => idx !== i)));
 
   async function submit(receiveNow: boolean) {
     setError(null);
-    const payloadLines = lines
-      .filter((l) => l.productId && Number(l.quantity) > 0)
-      .map((l) => ({ productId: l.productId, quantity: Number(l.quantity) }));
+    const chosen = lines.filter((l) => l.productId && Number(l.quantity) > 0);
     if (!warehouseId) return setError('Select a warehouse.');
-    if (payloadLines.length === 0) return setError('Add at least one line with a product and quantity.');
+    if (chosen.length === 0) return setError('Add at least one line with a product and quantity.');
+    // Batch-tracked products must reference a recognized lot (selected, not typed).
+    if (chosen.some((l) => isBatch(l.productId) && !l.lotId)) return setError('Select a lot for each batch-tracked line.');
+    const payloadLines = chosen.map((l) => ({ productId: l.productId, quantity: Number(l.quantity), ...(l.lotId ? { lotId: l.lotId } : {}) }));
     setSaving(true);
     try {
       const created = await api.returns.create({
@@ -91,15 +94,20 @@ export default function NewReturnPage() {
           <button type="button" className="btn secondary" onClick={addLine}>+ Add line</button>
         </div>
         <table className="grid">
-          <thead><tr><th>Product</th><th className="num" style={{ width: 160 }}>Quantity</th><th style={{ width: 60 }} /></tr></thead>
+          <thead><tr><th>Product</th><th style={{ width: 280 }}>Lot</th><th className="num" style={{ width: 140 }}>Quantity</th><th style={{ width: 60 }} /></tr></thead>
           <tbody>
             {lines.map((l, i) => (
               <tr key={i}>
                 <td>
-                  <select value={l.productId} onChange={(e) => setLine(i, { productId: e.target.value })}>
+                  <select value={l.productId} onChange={(e) => setLine(i, { productId: e.target.value, lotId: '' })}>
                     <option value="">Select product…</option>
                     {products.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
                   </select>
+                </td>
+                <td>
+                  {isBatch(l.productId)
+                    ? <LotPicker productId={l.productId} warehouseId={warehouseId} value={l.lotId} onChange={(lotId) => setLine(i, { lotId })} />
+                    : <span className="muted">—</span>}
                 </td>
                 <td className="num"><input type="number" min="0" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} /></td>
                 <td><button type="button" className="btn secondary" onClick={() => removeLine(i)} disabled={lines.length === 1}>✕</button></td>
