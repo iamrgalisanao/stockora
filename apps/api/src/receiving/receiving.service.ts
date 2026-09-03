@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ReceiptStatus } from '@prisma/client';
+import { InventoryMovement, MovementType, Prisma, ReceiptStatus } from '@prisma/client';
 import { PERMISSIONS } from '@iw/contracts';
 import type { ReceiptListItem, ReceiptResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
@@ -8,6 +8,7 @@ import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
 import { LotsService } from '../lots/lots.service';
+import { SerialsService, type ReceiptCaptureInput } from '../serials/serials.service';
 import { NIL_UUID } from '../inventory/inventory.constants';
 import { CreateReceiptDto, ReceiptItemInputDto, UpdateReceiptDto } from './dto/receipt.dto';
 
@@ -29,6 +30,7 @@ export class ReceivingService {
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
     private readonly lots: LotsService,
+    private readonly serials: SerialsService,
   ) {}
 
   async list(organizationId: string, user: RequestUser): Promise<ReceiptListItem[]> {
@@ -154,53 +156,109 @@ export class ReceivingService {
       throw new BadRequestException('No received quantities to post');
     }
 
-    // Resolve lots for batch-tracked items (ADR 0007). A batch-tracked line must carry a lot number
-    // (its `batchNumber`); a non-batch line keeps `batchNumber` only as free-text and posts with no lot.
-    const tracked = new Map(
-      (await this.prisma.product.findMany({
-        where: { id: { in: [...new Set(receivedItems.map((i) => i.productId))] }, organizationId },
-        select: { id: true, isBatchTracked: true },
-      })).map((p) => [p.id, p.isBatchTracked]),
-    );
-    const lines = [];
-    for (const i of receivedItems) {
-      const isBatchTracked = tracked.get(i.productId) ?? false;
-      const lotId = isBatchTracked
-        ? await this.lots.resolveLotId(
-            organizationId, user.userId, i.productId, i.variantId ?? NIL_UUID, true,
-            { lotNumber: i.batchNumber ?? undefined, expiryDate: i.expiryDate ? i.expiryDate.toISOString() : undefined, supplierId: receipt.supplierId ?? undefined },
-            'RECEIPT',
-          )
-        : null;
-      lines.push({ productId: i.productId, variantId: i.variantId, quantity: i.receivedQty, unitCost: i.unitCost, locationId: i.locationId, lotId });
+    // Product tracking metadata: batch-tracking (ADR 0007) drives lot resolution; serialization + its
+    // capture policy (ADR 0012) drives per-unit serial capture.
+    const productIds = [...new Set(receivedItems.map((i) => i.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, organizationId },
+      select: { id: true, isBatchTracked: true, isSerialized: true },
+    });
+    const tracked = new Map(products.map((p) => [p.id, p]));
+    const policyMap = await this.serials.policyMapFor(organizationId, productIds);
+
+    // Resolve lots for batch-tracked items. A batch-tracked line must carry a lot number (its
+    // `batchNumber`); a non-batch line keeps `batchNumber` only as free-text and posts with no lot.
+    const lines: Array<{
+      productId: string;
+      variantId: string | null;
+      quantity: Prisma.Decimal;
+      unitCost: Prisma.Decimal;
+      locationId: string | null;
+      lotId: string | null;
+    }> = [];
+    const captureInputs: ReceiptCaptureInput[] = [];
+    receivedItems.forEach((i) => {
+      const meta = tracked.get(i.productId);
+      const isBatchTracked = meta?.isBatchTracked ?? false;
+      captureInputs.push({
+        lineRef: lines.length,
+        productId: i.productId,
+        variantId: i.variantId,
+        locationId: i.locationId,
+        lotId: null, // set below once the lot is resolved
+        isSerialized: meta?.isSerialized ?? false,
+        isBatchTracked,
+        captureMode: policyMap.get(i.productId)?.captureMode ?? 'RECEIPT',
+        requireLotWhenBatchTracked: policyMap.get(i.productId)?.requireLotWhenBatchTracked ?? true,
+        receivedQty: new Prisma.Decimal(i.receivedQty),
+        serialNumbers: i.serialNumbers ?? [],
+      });
+      lines.push({ productId: i.productId, variantId: i.variantId, quantity: new Prisma.Decimal(i.receivedQty), unitCost: new Prisma.Decimal(i.unitCost), locationId: i.locationId, lotId: null });
+    });
+
+    for (let idx = 0; idx < receivedItems.length; idx++) {
+      const i = receivedItems[idx]!;
+      if (!(tracked.get(i.productId)?.isBatchTracked ?? false)) continue;
+      const lotId = await this.lots.resolveLotId(
+        organizationId, user.userId, i.productId, i.variantId ?? NIL_UUID, true,
+        { lotNumber: i.batchNumber ?? undefined, expiryDate: i.expiryDate ? i.expiryDate.toISOString() : undefined, supplierId: receipt.supplierId ?? undefined },
+        'RECEIPT',
+      );
+      lines[idx]!.lotId = lotId;
+      captureInputs[idx]!.lotId = lotId;
     }
 
-    await this.posting.receipt(
-      {
-        organizationId,
-        actorId: user.userId,
-        // Stable key so re-posting the same receipt never double-counts.
-        idempotencyKey: idempotencyKey ?? `goods_receipt:${receipt.id}`,
-      },
-      { warehouseId: receipt.warehouseId, referenceType: 'goods_receipt', referenceId: receipt.id, lines },
-    );
+    // Validate ALL serial captures before any physical inventory commits (ADR 0012 §6 — all-or-nothing).
+    const prepared = await this.serials.validateReceiptCaptures(organizationId, captureInputs);
 
     const fullyReceived = receipt.items.every((i) =>
       new Prisma.Decimal(i.receivedQty).gte(new Prisma.Decimal(i.expectedQty)),
     );
     const status = fullyReceived ? ReceiptStatus.COMPLETED : ReceiptStatus.PARTIALLY_RECEIVED;
+    const key = idempotencyKey ?? `goods_receipt:${receipt.id}`;
 
-    await this.prisma.goodsReceipt.update({
-      where: { id },
-      data: { status, postedAt: new Date() },
-    });
+    // Ledger movement + serial registry + receipt close all commit as one transaction. A rollback leaves
+    // no serial rows, and each serialized line records ONE quantity movement (not N) with its serials
+    // linked via lastMovementId.
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const movementByLineRef = new Map<number, InventoryMovement>();
+        for (let idx = 0; idx < lines.length; idx++) {
+          const line = lines[idx]!;
+          const movement = await this.posting.postLineInTx(
+            tx,
+            { organizationId, actorId: user.userId, idempotencyKey: idx === 0 ? key : null },
+            {
+              movementType: MovementType.PURCHASE_RECEIPT,
+              warehouseId: receipt.warehouseId,
+              referenceType: 'goods_receipt',
+              referenceId: receipt.id,
+              line,
+            },
+          );
+          movementByLineRef.set(idx, movement);
+        }
+        await this.serials.createReceiptSerialsInTx(tx, organizationId, receipt.warehouseId, prepared, movementByLineRef);
+        await tx.goodsReceipt.update({ where: { id }, data: { status, postedAt: new Date() } });
+      });
+    } catch (e) {
+      // Concurrent double-post: the unique movement idempotency key lost the race — the winner already
+      // posted and closed the receipt. Return it as-is.
+      if (this.isUniqueViolation(e)) {
+        const already = await this.load(organizationId, id);
+        if (already.postedAt) return this.toResponse(already, user);
+      }
+      throw e;
+    }
+
+    const serialCount = prepared.reduce((n, c) => n + c.serialNumbers.length, 0);
     await this.audit.record({
       organizationId,
       userId: user.userId,
       action: 'goods_receipt.posted',
       entityType: 'goods_receipt',
       entityId: id,
-      newValue: { status, lines: lines.length },
+      newValue: { status, lines: lines.length, serials: serialCount },
     });
     return this.get(organizationId, user, id);
   }
@@ -230,7 +288,12 @@ export class ReceivingService {
       expiryDate: i.expiryDate ? new Date(i.expiryDate) : null,
       locationId: i.locationId ?? null,
       remarks: i.remarks ?? null,
+      serialNumbers: i.serialNumbers ?? [],
     };
+  }
+
+  private isUniqueViolation(e: unknown): boolean {
+    return typeof e === 'object' && e !== null && 'code' in e && (e as { code: string }).code === 'P2002';
   }
 
   private async ensureSupplier(organizationId: string, supplierId: string): Promise<void> {
@@ -300,6 +363,7 @@ export class ReceivingService {
           expiryDate: i.expiryDate ? i.expiryDate.toISOString() : null,
           locationId: i.locationId,
           remarks: i.remarks,
+          serialNumbers: i.serialNumbers ?? [],
         } as ReceiptResponse['items'][number];
         if (canCost) item.unitCost = i.unitCost.toString();
         return item;

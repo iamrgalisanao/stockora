@@ -70,6 +70,11 @@ export const PERMISSIONS = {
   CYCLE_COUNT_SCHEDULE: 'cycle_count.schedule',
   CYCLE_COUNT_ASSIGN: 'cycle_count.assign',
   CYCLE_COUNT_MANAGE_POLICY: 'cycle_count.manage_policy',
+
+  // Serial tracking (2D.3) — unit-level identity registry over the ledger. Capture rides receiving
+  // (inventory.receive); these gate reading the registry and managing per-product capture policy.
+  SERIAL_VIEW: 'serial.view',
+  SERIAL_MANAGE_POLICY: 'serial.manage_policy',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -127,4 +132,6 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { code: PERMISSIONS.CYCLE_COUNT_SCHEDULE, description: 'Generate cycle-count tasks and create ad-hoc tasks' },
   { code: PERMISSIONS.CYCLE_COUNT_ASSIGN, description: 'Assign cycle-count tasks to counters' },
   { code: PERMISSIONS.CYCLE_COUNT_MANAGE_POLICY, description: 'Manage cycle-count policy (frequencies, thresholds, strategy)' },
+  { code: PERMISSIONS.SERIAL_VIEW, description: 'View the serial registry and reconciliation' },
+  { code: PERMISSIONS.SERIAL_MANAGE_POLICY, description: 'Manage per-product serial-capture policy' },
 ];

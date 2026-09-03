@@ -24,6 +24,8 @@ export interface ReceiptItemResponse {
   expiryDate: string | null;
   locationId: string | null;
   remarks: string | null;
+  /** Per-unit serial numbers captured on the line for a serialized product (ADR 0012). */
+  serialNumbers: string[];
 }
 
 export interface ReceiptResponse {

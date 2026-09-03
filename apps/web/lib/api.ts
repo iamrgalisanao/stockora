@@ -72,6 +72,10 @@ import type {
   NotificationPreferenceResponse,
   OrganizationWebhookConfigResponse,
   NotificationDeliveryListItem,
+  SerialResponse,
+  SerialStatus,
+  SerialTrackingPolicyResponse,
+  SerialReconciliationResult,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -104,7 +108,15 @@ export interface CreateReceiptBody {
   warehouseId: string;
   purchaseOrderRef?: string;
   notes?: string;
-  items: Array<{ productId: string; expectedQty?: number; receivedQty?: number; unitCost?: number }>;
+  items: Array<{
+    productId: string;
+    expectedQty?: number;
+    receivedQty?: number;
+    unitCost?: number;
+    batchNumber?: string;
+    locationId?: string;
+    serialNumbers?: string[];
+  }>;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4100';
@@ -604,6 +616,21 @@ export const api = {
     changeLocationStatus: (id: string, locationId: string, status: EntityStatus) =>
       request<WarehouseLocationResponse>(`/warehouses/${id}/locations/${locationId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
     policies: (id: string) => request<InventoryPolicyResponse[]>(`/warehouses/${id}/policies`),
+  },
+
+  serials: {
+    list: (filters: { productId?: string; warehouseId?: string; status?: SerialStatus; lotId?: string; q?: string } = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+      const qs = p.toString();
+      return request<SerialResponse[]>(`/serials${qs ? `?${qs}` : ''}`);
+    },
+    get: (id: string) => request<SerialResponse>(`/serials/${id}`),
+    reconcile: (productId?: string) =>
+      request<SerialReconciliationResult>(`/serials/reconcile${productId ? `?productId=${productId}` : ''}`),
+    policy: (productId: string) => request<SerialTrackingPolicyResponse>(`/serials/policies/${productId}`),
+    savePolicy: (productId: string, body: { captureMode: 'RECEIPT' | 'ISSUE'; requireLotWhenBatchTracked?: boolean }) =>
+      request<SerialTrackingPolicyResponse>(`/serials/policies/${productId}`, { method: 'PUT', body: JSON.stringify(body) }),
   },
 };
 

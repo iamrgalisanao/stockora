@@ -70,7 +70,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2D.2B — External Delivery Framework + Email (strict-opt-in NotificationPreference; NotificationDelivery + retrying/dead-lettering dispatcher; pluggable channel adapter with a console email transport; template renderer with deep links; admin delivery diagnostics):** ✅ [docs/PHASE-2D2B-EMAIL-DELIVERY.md](docs/PHASE-2D2B-EMAIL-DELIVERY.md)
   - **2D.2C — Notification UX + Webhook (unread badge + inbox email-status + preferences UI; org-level webhook integration: OrganizationWebhookConfig + WebhookSubscription, signed/versioned payload, console/loopback transport, retrying dispatcher; webhook admin UI):** ✅ [docs/PHASE-2D2C-WEBHOOK-UX.md](docs/PHASE-2D2C-WEBHOOK-UX.md)
 - **✅ 2D.2 — Notifications complete.**
-- **Next:** 2D.3 Serial Tracking (unit-level serial identity for high-value goods).
+- **2D.3 — Serial Tracking** (unit-level serial identity as a registry-with-state over the ledger; [ADR 0012](docs/adr/0012-serial-tracking.md)):
+  - **2D.3A — Serial Core + Receiving (InventorySerial registry + per-product SerialTrackingPolicy; product-scoped case-sensitive uniqueness; capture-at-receipt on the goods-receipt line, validated up front and written atomically with the ledger movement — one quantity movement, N linked serials; serial query API; bucket-mapped reconciliation health check; Serials UI + receiving-form serial capture):** ✅ [docs/PHASE-2D3A-SERIAL-CORE.md](docs/PHASE-2D3A-SERIAL-CORE.md)
+  - **Next:** 2D.3B — Propagation (release/transfer/return state transitions + capture-at-issue), then 2D.3C — Traceability UX.
 - Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
