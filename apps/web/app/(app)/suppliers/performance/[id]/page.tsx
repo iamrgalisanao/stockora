@@ -3,8 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import type { MetricTrend, SupplierScorecardResponse } from '@iw/contracts';
+import type { EvidenceMetric, MetricTrend, SupplierEvidenceResponse, SupplierScorecardResponse, SupplierTrendSeriesResponse } from '@iw/contracts';
+import { EVIDENCE_METRICS } from '@iw/contracts';
 import { api } from '../../../../../lib/api';
+import { SupplierTrendChart } from '../../../../../components/SupplierTrendChart';
+
+const EVIDENCE_LABEL: Record<EvidenceMetric, string> = {
+  FILL_RATE: 'Fill rate', ON_TIME: 'On-time delivery', LEAD_TIME: 'Lead time', PRICE: 'Price variance', QUALITY: 'Reject rate',
+};
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 const fmt = (v: number | null, suffix = '') => (v === null ? '—' : `${v}${suffix}`);
@@ -25,13 +31,23 @@ export default function SupplierScorecardPage() {
   const [from, setFrom] = useState(isoDay(new Date(Date.now() - 90 * 86_400_000)));
   const [to, setTo] = useState(isoDay(new Date()));
   const [data, setData] = useState<SupplierScorecardResponse | null>(null);
+  const [series, setSeries] = useState<SupplierTrendSeriesResponse | null>(null);
+  const [evMetric, setEvMetric] = useState<EvidenceMetric>('FILL_RATE');
+  const [evidence, setEvidence] = useState<SupplierEvidenceResponse | null>(null);
+  const [evError, setEvError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const range = () => ({ from: new Date(from).toISOString(), to: new Date(to + 'T23:59:59').toISOString() });
+
   useEffect(() => {
-    api.supplierScorecard(id, { from: new Date(from).toISOString(), to: new Date(to + 'T23:59:59').toISOString() })
-      .then(setData)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+    api.supplierScorecard(id, range()).then(setData).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+    api.supplierTrends(id, range()).then(setSeries).catch(() => setSeries(null));
   }, [id, from, to]);
+
+  useEffect(() => {
+    setEvError(null);
+    api.supplierEvidence(id, evMetric, range()).then(setEvidence).catch((e) => { setEvidence(null); setEvError(e instanceof Error ? e.message : 'Not available'); });
+  }, [id, from, to, evMetric]);
 
   const s = data?.supplier;
 
@@ -125,6 +141,62 @@ export default function SupplierScorecardPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Trends over time (2D.4C) */}
+          {series && series.buckets.length > 0 && (
+            <div className="card" style={{ marginTop: 12 }}>
+              <strong style={{ fontSize: 13 }}>Trends</strong>
+              <div style={{ marginTop: 8 }}><SupplierTrendChart series={series} /></div>
+            </div>
+          )}
+
+          {/* Performance evidence — drill every metric back to its records (2D.4C) */}
+          <div className="card" style={{ marginTop: 12 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: 13 }}>Performance evidence</strong>
+              <select value={evMetric} onChange={(e) => setEvMetric(e.target.value as EvidenceMetric)} style={{ width: 'auto' }}>
+                {EVIDENCE_METRICS.map((m) => <option key={m} value={m}>{EVIDENCE_LABEL[m]}</option>)}
+              </select>
+            </div>
+            {evError && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{evError}</div>}
+            {evidence && (
+              <>
+                <div className="muted" style={{ fontSize: 12, margin: '8px 0' }}>
+                  {evidence.label}: <strong>{evidence.value === null ? '—' : evidence.value}{evMetric === 'LEAD_TIME' ? 'd' : '%'}</strong>
+                  {' '}from {evidence.numerator} / {evidence.denominator} · {evidence.records.length} record(s)
+                </div>
+                <div className="table-wrap">
+                  <table className="grid">
+                    <thead>
+                      <tr>
+                        <th>Receipt</th><th>Date</th><th>Product</th>
+                        {evMetric === 'FILL_RATE' && (<><th className="num">Expected</th><th className="num">Received</th></>)}
+                        {evMetric === 'ON_TIME' && (<><th>Expected delivery</th><th>On time?</th></>)}
+                        {evMetric === 'LEAD_TIME' && (<><th>Ordered</th><th className="num">Lead days</th></>)}
+                        {evMetric === 'PRICE' && (<><th className="num">Unit cost</th><th className="num">Reference</th><th className="num">Variance</th></>)}
+                        {evMetric === 'QUALITY' && (<><th className="num">Received</th><th className="num">Rejected</th></>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {evidence.records.map((r, i) => (
+                        <tr key={i}>
+                          <td><Link href={`/receiving/${r.receiptId}`}>{r.receiptNumber}</Link></td>
+                          <td>{new Date(r.receivingDate).toLocaleDateString()}</td>
+                          <td>{r.productSku ?? '—'}</td>
+                          {evMetric === 'FILL_RATE' && (<><td className="num">{r.expectedQty}</td><td className="num">{r.receivedQty}</td></>)}
+                          {evMetric === 'ON_TIME' && (<><td>{r.expectedDeliveryDate ? new Date(r.expectedDeliveryDate).toLocaleDateString() : '—'}</td><td>{r.onTime ? '✓' : '✗ late'}</td></>)}
+                          {evMetric === 'LEAD_TIME' && (<><td>{r.orderDate ? new Date(r.orderDate).toLocaleDateString() : '—'}</td><td className="num">{r.leadTimeDays}</td></>)}
+                          {evMetric === 'PRICE' && (<><td className="num">{r.unitCost}</td><td className="num">{r.referenceCost}</td><td className="num">{r.variancePct}%</td></>)}
+                          {evMetric === 'QUALITY' && (<><td className="num">{r.receivedQty}</td><td className="num">{r.rejectedQty}</td></>)}
+                        </tr>
+                      ))}
+                      {evidence.records.length === 0 && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 14 }}>No qualifying records for this metric in the period.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </>
       )}

@@ -46,6 +46,42 @@ export default function SupplierAnalyticsPage() {
   }, [from, to, warehouseId, productId, reloadKey]);
 
   const rows = useMemo(() => data?.suppliers ?? [], [data]);
+  const [sortKey, setSortKey] = useState<'score' | 'fill' | 'onTime' | 'lead' | 'price' | 'quality' | 'receipts'>('score');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const getVal = (r: (typeof rows)[number], k: typeof sortKey): number | null => ({
+    score: r.performanceScore, fill: r.fillRatePct, onTime: r.onTimeDeliveryPct, lead: r.averageLeadTimeDays,
+    price: r.priceVariancePct, quality: r.returnRatePct, receipts: r.receiptsCount,
+  }[k]);
+
+  const sorted = useMemo(() => {
+    const list = [...rows];
+    list.sort((a, b) => {
+      const av = getVal(a, sortKey); const bv = getVal(b, sortKey);
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1; // missing values always sort last, never as zero
+      if (bv === null) return -1;
+      return sortDir === 'asc' ? av - bv : bv - av;
+    });
+    return list;
+  }, [rows, sortKey, sortDir]);
+
+  const kpi = useMemo(() => {
+    const avg = (vals: Array<number | null>) => { const p = vals.filter((v): v is number => v !== null); return p.length ? Math.round((p.reduce((s, v) => s + v, 0) / p.length) * 10) / 10 : null; };
+    return {
+      score: avg(rows.map((r) => r.performanceScore)),
+      onTime: avg(rows.map((r) => r.onTimeDeliveryPct)),
+      fill: avg(rows.map((r) => r.fillRatePct)),
+      lead: avg(rows.map((r) => r.averageLeadTimeDays)),
+      quality: avg(rows.map((r) => r.returnRatePct)),
+    };
+  }, [rows]);
+
+  const sortHeader = (k: typeof sortKey, label: string) => (
+    <th className="num" style={{ cursor: 'pointer' }} onClick={() => { if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc')); else { setSortKey(k); setSortDir('desc'); } }}>
+      {label}{sortKey === k ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </th>
+  );
 
   async function saveWeights() {
     if (!weights) return;
@@ -92,23 +128,39 @@ export default function SupplierAnalyticsPage() {
 
       {error && <div className="error">{error}</div>}
 
+      {/* KPI summary (2D.4C) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 12 }}>
+        {[
+          { label: 'Avg score', v: kpi.score, suffix: '' },
+          { label: 'Avg on-time', v: kpi.onTime, suffix: '%' },
+          { label: 'Avg fill rate', v: kpi.fill, suffix: '%' },
+          { label: 'Avg lead time', v: kpi.lead, suffix: 'd' },
+          { label: 'Avg reject rate', v: kpi.quality, suffix: '%' },
+        ].map((k) => (
+          <div key={k.label} className="card" style={{ textAlign: 'center', padding: 12 }}>
+            <div className="muted" style={{ fontSize: 11 }}>{k.label}</div>
+            <div style={{ fontSize: 26, fontWeight: 800 }}>{k.v === null ? '—' : `${k.v}${k.suffix}`}</div>
+          </div>
+        ))}
+      </div>
+
       <div className="card">
         <div className="table-wrap">
           <table className="grid">
             <thead>
               <tr>
                 <th>Supplier</th>
-                <th className="num">Score</th>
-                <th className="num">Fill rate</th>
-                <th className="num">On-time</th>
-                <th className="num">Lead time</th>
-                <th className="num">Price var.</th>
-                <th className="num">Return rate</th>
-                <th className="num">Receipts</th>
+                {sortHeader('score', 'Score')}
+                {sortHeader('fill', 'Fill rate')}
+                {sortHeader('onTime', 'On-time')}
+                {sortHeader('lead', 'Lead time')}
+                {sortHeader('price', 'Price var.')}
+                {sortHeader('quality', 'Return rate')}
+                {sortHeader('receipts', 'Receipts')}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {sorted.map((r) => (
                 <tr key={r.supplierId}>
                   <td><Link href={`/suppliers/performance/${r.supplierId}`}>{r.supplierCode} — {r.supplierName}</Link>{r.isPreferred ? <span className="badge ok" style={{ marginLeft: 6 }}>Preferred</span> : null} <span className="muted" style={{ fontSize: 10 }}>{r.sampleLabel.replace('_SAMPLE', '').toLowerCase()}</span></td>
                   <td className="num"><span className={`badge ${scoreClass(r.performanceScore)}`}>{r.performanceScore ?? '—'}</span></td>

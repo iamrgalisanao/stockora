@@ -1,10 +1,13 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Put, Query } from '@nestjs/common';
 import {
   DashboardSummary, PERMISSIONS, ReorderAssessment,
+  type EvidenceMetric,
   type PreferredSupplierComparisonResponse,
   type SupplierAnalyticsPolicyResponse,
+  type SupplierEvidenceResponse,
   type SupplierPerformanceResponse,
   type SupplierScorecardResponse,
+  type SupplierTrendSeriesResponse,
 } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
@@ -85,5 +88,35 @@ export class AnalyticsController {
     @Query('warehouseId') warehouseId?: string,
   ): Promise<SupplierScorecardResponse> {
     return this.supplierPerformance.scorecard(user.organizationId, user, id, { from, to, productId, warehouseId });
+  }
+
+  /** Time-series trends for a supplier (2D.4C) — deterministic granularity, coverage-per-bucket. */
+  @RequirePermissions(PERMISSIONS.REPORT_VIEW)
+  @Get('analytics/suppliers/:id/trends')
+  trends(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('productId') productId?: string,
+    @Query('warehouseId') warehouseId?: string,
+  ): Promise<SupplierTrendSeriesResponse> {
+    return this.supplierPerformance.trends(user.organizationId, user, id, { from, to, productId, warehouseId });
+  }
+
+  /** Metric drill-down: the exact records in a metric's numerator/denominator (2D.4C). Price needs cost.view. */
+  @RequirePermissions(PERMISSIONS.REPORT_VIEW)
+  @Get('analytics/suppliers/:id/evidence')
+  evidence(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('metric') metric: EvidenceMetric,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('productId') productId?: string,
+    @Query('warehouseId') warehouseId?: string,
+  ): Promise<SupplierEvidenceResponse> {
+    const canViewCost = user.permissions.includes(PERMISSIONS.COST_VIEW);
+    return this.supplierPerformance.evidence(user.organizationId, user, id, metric, { from, to, productId, warehouseId }, canViewCost);
   }
 }

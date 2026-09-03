@@ -1,8 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma, ReceiptStatus } from '@prisma/client';
 import {
   DEFAULT_SUPPLIER_SCORE_WEIGHTS,
+  type EvidenceMetric,
   type MetricTrend,
+  type SupplierEvidenceRecord,
+  type SupplierEvidenceResponse,
+  type SupplierTrendBucket,
+  type SupplierTrendSeriesResponse,
+  type TrendGranularity,
   type PreferredSupplierComparisonResponse,
   type PreferredSupplierComparisonRow,
   type SampleLabel,
@@ -35,6 +41,13 @@ export interface SupplierPerformanceFilter {
   warehouseId?: string;
   supplierId?: string;
 }
+
+type ReceiptPayload = Prisma.GoodsReceiptGetPayload<{
+  include: {
+    supplier: { select: { id: true; code: true; companyName: true; isPreferred: true; leadTimeDays: true } };
+    items: { include: { product: { select: { sku: true; name: true } } } };
+  };
+}>;
 
 interface Acc {
   supplierId: string;
@@ -158,6 +171,139 @@ export class SupplierPerformanceService {
     });
   }
 
+  // ---- time-series trends (2D.4C) ----
+
+  async trends(organizationId: string, user: RequestUser, supplierId: string, filter: SupplierPerformanceFilter): Promise<SupplierTrendSeriesResponse> {
+    const { from, to } = this.window(filter);
+    const weights = await this.weightsFor(organizationId);
+    const { receipts, refCost } = await this.fetchReceipts(organizationId, user, { ...filter, supplierId, from: from.toISOString(), to: to.toISOString() });
+    const granularity = this.granularityFor(from, to);
+    const buckets = this.bucketBoundaries(from, to, granularity).map((b): SupplierTrendBucket => {
+      const inBucket = receipts.filter((r) => r.receivingDate.getTime() >= b.start.getTime() && r.receivingDate.getTime() <= b.end.getTime());
+      const row = this.foldRows(inBucket, refCost, weights, false)[0];
+      return {
+        bucketStart: b.start.toISOString(), bucketEnd: b.end.toISOString(),
+        receiptsCount: row?.receiptsCount ?? 0, linesCount: row?.linesCount ?? 0,
+        performanceScore: row?.performanceScore ?? null,
+        fillRatePct: row?.fillRatePct ?? null, onTimeDeliveryPct: row?.onTimeDeliveryPct ?? null,
+        averageLeadTimeDays: row?.averageLeadTimeDays ?? null, priceVariancePct: row?.priceVariancePct ?? null,
+        returnRatePct: row?.returnRatePct ?? 0,
+        coverage: row?.coverage ?? { fillRatePct: 0, onTimePct: 0, leadTimePct: 0, pricePct: 0 },
+      };
+    });
+    return {
+      supplierId, from: from.toISOString(), to: to.toISOString(), granularity, weights,
+      metrics: [
+        { key: 'score', label: 'Overall score', higherIsBetter: true },
+        { key: 'fillRate', label: 'Fill rate', higherIsBetter: true },
+        { key: 'onTime', label: 'On-time delivery', higherIsBetter: true },
+        { key: 'leadTime', label: 'Lead time', higherIsBetter: false },
+        { key: 'price', label: 'Price variance', higherIsBetter: false },
+        { key: 'quality', label: 'Reject rate', higherIsBetter: false },
+      ],
+      buckets,
+    };
+  }
+
+  private granularityFor(from: Date, to: Date): TrendGranularity {
+    const days = (to.getTime() - from.getTime()) / MS_PER_DAY;
+    if (days <= 31) return 'DAILY';
+    if (days <= 180) return 'WEEKLY';
+    return 'MONTHLY';
+  }
+
+  private bucketBoundaries(from: Date, to: Date, g: TrendGranularity): Array<{ start: Date; end: Date }> {
+    const out: Array<{ start: Date; end: Date }> = [];
+    if (g === 'MONTHLY') {
+      let cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+      while (cursor.getTime() <= to.getTime()) {
+        const next = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+        const start = new Date(Math.max(cursor.getTime(), from.getTime()));
+        const end = new Date(Math.min(next.getTime() - 1, to.getTime()));
+        out.push({ start, end });
+        cursor = next;
+      }
+      return out;
+    }
+    const step = (g === 'DAILY' ? 1 : 7) * MS_PER_DAY;
+    for (let t = from.getTime(); t <= to.getTime(); t += step) {
+      out.push({ start: new Date(t), end: new Date(Math.min(t + step - 1, to.getTime())) });
+    }
+    return out;
+  }
+
+  // ---- metric evidence / drill-down (2D.4C) ----
+
+  async evidence(
+    organizationId: string,
+    user: RequestUser,
+    supplierId: string,
+    metric: EvidenceMetric,
+    filter: SupplierPerformanceFilter,
+    canViewCost: boolean,
+  ): Promise<SupplierEvidenceResponse> {
+    if (metric === 'PRICE' && !canViewCost) {
+      throw new ForbiddenException('cost.view is required to drill into price performance');
+    }
+    const { from, to } = this.window(filter);
+    const { receipts, refCost } = await this.fetchReceipts(organizationId, user, { ...filter, supplierId, from: from.toISOString(), to: to.toISOString() });
+    const records: SupplierEvidenceRecord[] = [];
+    let numerator = 0;
+    let denominator = 0;
+
+    const base = (r: ReceiptPayload) => ({ receiptId: r.id, receiptNumber: r.receiptNumber, receivingDate: r.receivingDate.toISOString(), warehouseId: r.warehouseId });
+
+    if (metric === 'ON_TIME') {
+      for (const r of receipts) {
+        if (!r.expectedDeliveryDate) continue;
+        const onTime = r.receivingDate.getTime() <= r.expectedDeliveryDate.getTime();
+        denominator += 1; if (onTime) numerator += 1;
+        records.push({ ...base(r), productId: null, productSku: null, includedInNumerator: onTime, expectedDeliveryDate: r.expectedDeliveryDate.toISOString(), onTime });
+      }
+    } else if (metric === 'LEAD_TIME') {
+      for (const r of receipts) {
+        if (!r.orderDate) continue;
+        const leadTimeDays = round((r.receivingDate.getTime() - r.orderDate.getTime()) / MS_PER_DAY, 1);
+        denominator += 1; numerator += leadTimeDays;
+        records.push({ ...base(r), productId: null, productSku: null, includedInNumerator: true, orderDate: r.orderDate.toISOString(), leadTimeDays });
+      }
+    } else {
+      for (const r of receipts) {
+        for (const it of r.items) {
+          const expected = D(it.expectedQty); const received = D(it.receivedQty); const rejected = D(it.rejectedQty);
+          if (metric === 'FILL_RATE') {
+            if (!expected.gt(0)) continue;
+            numerator += received.toNumber(); denominator += expected.toNumber();
+            records.push({ ...base(r), productId: it.productId, productSku: it.product.sku, includedInNumerator: received.gt(0), expectedQty: expected.toString(), receivedQty: received.toString() });
+          } else if (metric === 'QUALITY') {
+            denominator += received.add(rejected).toNumber(); numerator += rejected.toNumber();
+            if (rejected.gt(0)) records.push({ ...base(r), productId: it.productId, productSku: it.product.sku, includedInNumerator: true, receivedQty: received.toString(), rejectedQty: rejected.toString() });
+          } else { // PRICE
+            const ref = refCost.get(`${supplierId}|${it.productId}`);
+            if (!(ref && ref.gt(0) && received.gt(0))) continue;
+            numerator += received.mul(it.unitCost).toNumber(); denominator += received.mul(ref).toNumber();
+            records.push({ ...base(r), productId: it.productId, productSku: it.product.sku, includedInNumerator: true, receivedQty: received.toString(), unitCost: D(it.unitCost).toString(), referenceCost: ref.toString(), variancePct: round(D(it.unitCost).sub(ref).div(ref).mul(100).toNumber()) });
+          }
+        }
+      }
+    }
+
+    const value = this.evidenceValue(metric, numerator, denominator);
+    return {
+      supplierId, metric, from: from.toISOString(), to: to.toISOString(),
+      label: { FILL_RATE: 'Fill rate', ON_TIME: 'On-time delivery', LEAD_TIME: 'Lead time', PRICE: 'Price variance', QUALITY: 'Reject rate' }[metric],
+      numerator: round(numerator), denominator: round(denominator), value,
+      records: records.sort((a, b) => (a.receivingDate < b.receivingDate ? 1 : -1)),
+    };
+  }
+
+  private evidenceValue(metric: EvidenceMetric, num: number, den: number): number | null {
+    if (den === 0) return metric === 'QUALITY' ? 0 : null;
+    if (metric === 'LEAD_TIME') return round(num / den, 1);
+    if (metric === 'PRICE') return round(((num - den) / den) * 100);
+    return round((num / den) * 100); // fill / on-time / quality
+  }
+
   // ---- preferred-vs-observed comparison (2D.4B) ----
 
   async preferredComparison(organizationId: string, user: RequestUser, filter: SupplierPerformanceFilter): Promise<PreferredSupplierComparisonResponse> {
@@ -229,13 +375,7 @@ export class SupplierPerformanceService {
     return { from, to };
   }
 
-  private async computeRows(
-    organizationId: string,
-    user: RequestUser,
-    filter: SupplierPerformanceFilter,
-    weights: SupplierScoreWeights,
-    byProduct: boolean,
-  ): Promise<SupplierPerformanceRow[]> {
+  private async fetchReceipts(organizationId: string, user: RequestUser, filter: SupplierPerformanceFilter): Promise<{ receipts: ReceiptPayload[]; refCost: Map<string, Prisma.Decimal> }> {
     const to = new Date(filter.to!);
     const from = new Date(filter.from!);
     const scope = user.warehouseScope;
@@ -254,14 +394,53 @@ export class SupplierPerformanceService {
         items: { where: filter.productId ? { productId: filter.productId } : undefined, include: { product: { select: { sku: true, name: true } } } },
       },
     });
-
     const supplierIds = [...new Set(receipts.map((r) => r.supplierId).filter((x): x is string => !!x))];
     const productIds = [...new Set(receipts.flatMap((r) => r.items.map((i) => i.productId)))];
     const refRows = supplierIds.length && productIds.length
       ? await this.prisma.supplierProduct.findMany({ where: { organizationId, supplierId: { in: supplierIds }, productId: { in: productIds } }, select: { supplierId: true, productId: true, cost: true } })
       : [];
-    const refCost = new Map(refRows.map((r) => [`${r.supplierId}|${r.productId}`, D(r.cost)]));
+    return { receipts, refCost: new Map(refRows.map((r) => [`${r.supplierId}|${r.productId}`, D(r.cost)])) };
+  }
 
+  private newAcc(sup: NonNullable<ReceiptPayload['supplier']>, it: ReceiptPayload['items'][number] | null, byProduct: boolean): Acc {
+    return {
+      supplierId: sup.id, supplierCode: sup.code, supplierName: sup.companyName, isPreferred: sup.isPreferred,
+      productId: byProduct && it ? it.productId : null, productSku: byProduct && it ? it.product.sku : null, productName: byProduct && it ? it.product.name : null,
+      quotedLeadTimeDays: sup.leadTimeDays > 0 ? sup.leadTimeDays : null,
+      receiptIds: new Set(), ordered: ZERO, received: ZERO, rejected: ZERO,
+      fillExpected: ZERO, fillReceived: ZERO, linesTotal: 0, linesWithExpected: 0,
+      receiptsWithExpectedDate: new Set(), onTimeReceipts: new Set(), receiptsWithOrderDate: new Set(), leadTimeDaysByReceipt: new Map(),
+      priceActualValue: ZERO, priceReferenceValue: ZERO, priceCoveredQty: ZERO,
+    };
+  }
+
+  /** Fold one receipt line into an accumulator — the single source of truth for every metric definition. */
+  private fold(a: Acc, r: ReceiptPayload, it: ReceiptPayload['items'][number], refCost: Map<string, Prisma.Decimal>): void {
+    a.receiptIds.add(r.id);
+    if (r.expectedDeliveryDate) {
+      a.receiptsWithExpectedDate.add(r.id);
+      if (r.receivingDate.getTime() <= r.expectedDeliveryDate.getTime()) a.onTimeReceipts.add(r.id);
+    }
+    if (r.orderDate) {
+      a.receiptsWithOrderDate.add(r.id);
+      a.leadTimeDaysByReceipt.set(r.id, (r.receivingDate.getTime() - r.orderDate.getTime()) / MS_PER_DAY);
+    }
+    const expected = D(it.expectedQty);
+    const received = D(it.receivedQty);
+    a.linesTotal += 1;
+    a.ordered = a.ordered.add(expected);
+    a.received = a.received.add(received);
+    a.rejected = a.rejected.add(D(it.rejectedQty));
+    if (expected.gt(0)) { a.linesWithExpected += 1; a.fillExpected = a.fillExpected.add(expected); a.fillReceived = a.fillReceived.add(received); }
+    const ref = refCost.get(`${a.supplierId}|${it.productId}`);
+    if (ref && ref.gt(0) && received.gt(0)) {
+      a.priceActualValue = a.priceActualValue.add(received.mul(it.unitCost));
+      a.priceReferenceValue = a.priceReferenceValue.add(received.mul(ref));
+      a.priceCoveredQty = a.priceCoveredQty.add(received);
+    }
+  }
+
+  private foldRows(receipts: ReceiptPayload[], refCost: Map<string, Prisma.Decimal>, weights: SupplierScoreWeights, byProduct: boolean): SupplierPerformanceRow[] {
     const accs = new Map<string, Acc>();
     for (const r of receipts) {
       const sup = r.supplier;
@@ -269,44 +448,16 @@ export class SupplierPerformanceService {
       for (const it of r.items) {
         const key = byProduct ? `${sup.id}|${it.productId}` : sup.id;
         let a = accs.get(key);
-        if (!a) {
-          a = {
-            supplierId: sup.id, supplierCode: sup.code, supplierName: sup.companyName, isPreferred: sup.isPreferred,
-            productId: byProduct ? it.productId : null, productSku: byProduct ? it.product.sku : null, productName: byProduct ? it.product.name : null,
-            quotedLeadTimeDays: sup.leadTimeDays > 0 ? sup.leadTimeDays : null,
-            receiptIds: new Set(), ordered: ZERO, received: ZERO, rejected: ZERO,
-            fillExpected: ZERO, fillReceived: ZERO, linesTotal: 0, linesWithExpected: 0,
-            receiptsWithExpectedDate: new Set(), onTimeReceipts: new Set(), receiptsWithOrderDate: new Set(), leadTimeDaysByReceipt: new Map(),
-            priceActualValue: ZERO, priceReferenceValue: ZERO, priceCoveredQty: ZERO,
-          };
-          accs.set(key, a);
-        }
-        a.receiptIds.add(r.id);
-        if (r.expectedDeliveryDate) {
-          a.receiptsWithExpectedDate.add(r.id);
-          if (r.receivingDate.getTime() <= r.expectedDeliveryDate.getTime()) a.onTimeReceipts.add(r.id);
-        }
-        if (r.orderDate) {
-          a.receiptsWithOrderDate.add(r.id);
-          a.leadTimeDaysByReceipt.set(r.id, (r.receivingDate.getTime() - r.orderDate.getTime()) / MS_PER_DAY);
-        }
-        const expected = D(it.expectedQty);
-        const received = D(it.receivedQty);
-        const rejected = D(it.rejectedQty);
-        a.linesTotal += 1;
-        a.ordered = a.ordered.add(expected);
-        a.received = a.received.add(received);
-        a.rejected = a.rejected.add(rejected);
-        if (expected.gt(0)) { a.linesWithExpected += 1; a.fillExpected = a.fillExpected.add(expected); a.fillReceived = a.fillReceived.add(received); }
-        const ref = refCost.get(`${sup.id}|${it.productId}`);
-        if (ref && ref.gt(0) && received.gt(0)) {
-          a.priceActualValue = a.priceActualValue.add(received.mul(it.unitCost));
-          a.priceReferenceValue = a.priceReferenceValue.add(received.mul(ref));
-          a.priceCoveredQty = a.priceCoveredQty.add(received);
-        }
+        if (!a) { a = this.newAcc(sup, it, byProduct); accs.set(key, a); }
+        this.fold(a, r, it, refCost);
       }
     }
     return [...accs.values()].map((a) => this.finalize(a, weights));
+  }
+
+  private async computeRows(organizationId: string, user: RequestUser, filter: SupplierPerformanceFilter, weights: SupplierScoreWeights, byProduct: boolean): Promise<SupplierPerformanceRow[]> {
+    const { receipts, refCost } = await this.fetchReceipts(organizationId, user, filter);
+    return this.foldRows(receipts, refCost, weights, byProduct);
   }
 
   private sampleLabel(receipts: number): SampleLabel {

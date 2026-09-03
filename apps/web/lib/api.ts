@@ -81,6 +81,9 @@ import type {
   SupplierAnalyticsPolicyResponse,
   SupplierScorecardResponse,
   PreferredSupplierComparisonResponse,
+  SupplierTrendSeriesResponse,
+  SupplierEvidenceResponse,
+  EvidenceMetric,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -278,6 +281,17 @@ export const api = {
     for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
     const qs = q.toString();
     return request<PreferredSupplierComparisonResponse>(`/analytics/suppliers/preferred-comparison${qs ? `?${qs}` : ''}`);
+  },
+  supplierTrends: (id: string, filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<SupplierTrendSeriesResponse>(`/analytics/suppliers/${id}/trends${qs ? `?${qs}` : ''}`);
+  },
+  supplierEvidence: (id: string, metric: EvidenceMetric, filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams({ metric });
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    return request<SupplierEvidenceResponse>(`/analytics/suppliers/${id}/evidence?${q.toString()}`);
   },
   supplierWeights: () => request<SupplierAnalyticsPolicyResponse>('/analytics/suppliers/policy'),
   saveSupplierWeights: (w: { fillRate: number; onTime: number; leadTime: number; price: number; quality: number }) =>
