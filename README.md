@@ -62,7 +62,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ Phase 2C — Traceability complete** (Batch/Lot · Expiry+FEFO · Cycle Counting · Inventory Position).
 - **2D.1 — Events / Transactional Outbox** (reliable async delivery of committed domain facts; [ADR 0010](docs/adr/0010-transactional-outbox.md)):
   - **2D.1A — Outbox Core (OutboxEvent schema; transactional `enqueue(tx, …)` committing atomically with the business mutation; versioned envelope with correlation/causation/source; dedupe-on-replay; no dispatch yet):** ✅ [docs/PHASE-2D1A-OUTBOX-CORE.md](docs/PHASE-2D1A-OUTBOX-CORE.md)
-- **Next:** 2D.1B Relay + Delivery Semantics (DB-backed worker, claim/lease, retry/backoff, dead-letter, idempotent consumers).
+  - **2D.1B — Relay + Delivery Semantics (DB-backed worker: claim/lease with `FOR UPDATE SKIP LOCKED` + crash recovery; at-least-once delivery to a many-per-type consumer registry with per-consumer receipts; exponential backoff + dead-letter; thin poller; org-scoped `/outbox/health`):** ✅ [docs/PHASE-2D1B-RELAY.md](docs/PHASE-2D1B-RELAY.md)
+- **Next:** 2D.1C First Domain Integrations (emit LotExpiringSoon / LotExpired / CycleCountCompleted, wire a consumer, outbox ops view).
 - Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working

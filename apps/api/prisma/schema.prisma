@@ -1385,6 +1385,19 @@ model OutboxEvent {
   @@map("outbox_events")
 }
 
+/// Per-consumer delivery receipt (2D.1B, ADR 0010 §4). Makes at-least-once delivery safe: a consumer runs
+/// its side effect only when no receipt exists for (consumerName, eventId), then records one. On a retry,
+/// already-receipted consumers are skipped, so a multi-consumer event never repeats a succeeded consumer.
+model ConsumerReceipt {
+  id           String   @id @default(uuid()) @db.Uuid
+  consumerName String   @map("consumer_name")
+  eventId      String   @map("event_id") @db.Uuid
+  processedAt  DateTime @default(now()) @map("processed_at")
+
+  @@unique([consumerName, eventId])
+  @@map("consumer_receipts")
+}
+
 model WarehouseLocation {
   id              String   @id @default(uuid()) @db.Uuid
   organizationId  String   @map("organization_id") @db.Uuid
