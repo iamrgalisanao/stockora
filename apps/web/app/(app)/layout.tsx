@@ -48,6 +48,7 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/admin/brands', label: 'Brands' },
       { href: '/admin/units', label: 'Units' },
       { href: '/admin/adjustment-reasons', label: 'Adjustment Reasons' },
+      { href: '/admin/webhooks', label: 'Webhook Integration' },
     ],
   },
 ];
@@ -56,11 +57,22 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     if (!getToken()) router.replace('/login');
     else setReady(true);
   }, [router]);
+
+  // Live-ish unread badge on the Notifications nav link (light poll; refreshes when the route changes).
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    const tick = () => api.notifications.unreadCount().then((r) => { if (alive) setUnread(r.unread); }).catch(() => {});
+    tick();
+    const t = setInterval(tick, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, [ready, pathname]);
 
   if (!ready) return null;
 
@@ -76,6 +88,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               return (
                 <Link key={l.href} href={l.href} className={`nav-link ${active ? 'active' : ''}`}>
                   {l.label}
+                  {l.href === '/notifications' && unread > 0 && (
+                    <span className="badge danger" style={{ marginLeft: 8, fontSize: 11 }}>{unread}</span>
+                  )}
                 </Link>
               );
             })}

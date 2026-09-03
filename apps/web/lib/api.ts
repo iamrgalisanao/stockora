@@ -69,6 +69,9 @@ import type {
   OutboxEventListItem,
   NotificationResponse,
   UnreadCountResponse,
+  NotificationPreferenceResponse,
+  OrganizationWebhookConfigResponse,
+  NotificationDeliveryListItem,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -369,6 +372,17 @@ export const api = {
     read: (id: string) => request<{ ok: true }>(`/notifications/${id}/read`, { method: 'POST' }),
     readAll: () => request<{ updated: number }>('/notifications/read-all', { method: 'POST' }),
     dismiss: (id: string) => request<{ ok: true }>(`/notifications/${id}/dismiss`, { method: 'POST' }),
+    preferences: () => request<NotificationPreferenceResponse[]>('/notification-preferences'),
+    setPreference: (notificationType: string, channel: string, enabled: boolean) =>
+      request<NotificationPreferenceResponse>('/notification-preferences', { method: 'PUT', body: JSON.stringify({ notificationType, channel, enabled }) }),
+    deliveries: () => request<NotificationDeliveryListItem[]>('/notification-deliveries'),
+    webhook: {
+      get: () => request<OrganizationWebhookConfigResponse>('/notification-webhook'),
+      save: (body: { url: string; enabled: boolean; signingSecret?: string }) =>
+        request<OrganizationWebhookConfigResponse>('/notification-webhook', { method: 'PUT', body: JSON.stringify(body) }),
+      setSubscription: (notificationType: string, enabled: boolean) =>
+        request<OrganizationWebhookConfigResponse>('/notification-webhook/subscriptions', { method: 'PUT', body: JSON.stringify({ notificationType, enabled }) }),
+    },
   },
 
   dashboard: () => request<DashboardSummary>('/dashboard/summary'),

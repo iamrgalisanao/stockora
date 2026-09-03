@@ -7,8 +7,11 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { NotificationPreferencesController } from './notification-preferences.controller';
 import { NotificationDeliveriesController } from './notification-deliveries.controller';
+import { WebhookConfigService } from './webhook-config.service';
+import { WebhookConfigController } from './webhook-config.controller';
 import { ChannelAdapterRegistry } from './delivery/channel-adapter';
 import { ConsoleEmailAdapter } from './delivery/console-email.adapter';
+import { ConsoleWebhookAdapter } from './delivery/console-webhook.adapter';
 import { NotificationTemplateRenderer } from './delivery/template-renderer';
 import { NotificationDeliveryService } from './delivery/notification-delivery.service';
 import { NotificationDeliveryPoller } from './delivery/notification-delivery.poller';
@@ -20,14 +23,16 @@ import { NotificationDeliveryPoller } from './delivery/notification-delivery.pol
  */
 @Module({
   imports: [OutboxModule],
-  controllers: [NotificationsController, NotificationPreferencesController, NotificationDeliveriesController],
+  controllers: [NotificationsController, NotificationPreferencesController, NotificationDeliveriesController, WebhookConfigController],
   providers: [
     NotificationRuleEngine,
     NotificationConsumer,
     NotificationsService,
     NotificationPreferencesService,
+    WebhookConfigService,
     ChannelAdapterRegistry,
     ConsoleEmailAdapter,
+    ConsoleWebhookAdapter,
     NotificationTemplateRenderer,
     NotificationDeliveryService,
     NotificationDeliveryPoller,

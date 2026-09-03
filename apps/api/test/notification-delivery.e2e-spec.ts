@@ -9,14 +9,19 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { OutboxRelayService } from '../src/outbox/outbox-relay.service';
 import { NotificationDeliveryService } from '../src/notifications/delivery/notification-delivery.service';
-import { ChannelAdapterRegistry, type RenderedMessage } from '../src/notifications/delivery/channel-adapter';
+import { ChannelAdapterRegistry, type OutboundMessage } from '../src/notifications/delivery/channel-adapter';
 import { ConsoleEmailAdapter } from '../src/notifications/delivery/console-email.adapter';
 
 class TestEmailAdapter {
   readonly channel = 'EMAIL';
   failFor = new Set<string>();
-  sent: RenderedMessage[] = [];
-  async send(m: RenderedMessage) { if (this.failFor.has(m.to)) throw new Error('smtp 500'); this.sent.push(m); return { providerMessageId: `test:${randomUUID()}` }; }
+  sent: Array<Extract<OutboundMessage, { channel: 'EMAIL' }>> = [];
+  async send(m: OutboundMessage) {
+    if (m.channel !== 'EMAIL') throw new Error('not email');
+    if (this.failFor.has(m.to)) throw new Error('smtp 500');
+    this.sent.push(m);
+    return { providerMessageId: `test:${randomUUID()}` };
+  }
 }
 
 /**
