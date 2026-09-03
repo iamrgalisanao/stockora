@@ -14,6 +14,7 @@ export * from './transfers';
 export * from './adjustments';
 export * from './counts';
 export * from './analytics';
+export * from './supplier-analytics';
 export * from './reports';
 export * from './policies';
 export * from './search';

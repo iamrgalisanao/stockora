@@ -291,6 +291,10 @@ model GoodsReceipt {
   purchaseOrderRef  String?       @map("purchase_order_ref")
   deliveryReceiptRef String?      @map("delivery_receipt_ref")
   supplierInvoiceRef String?      @map("supplier_invoice_ref")
+  // Optional supplier-analytics capture (2D.4). Enables lead-time and on-time metrics where recorded;
+  // never guessed — a receipt that omits them is excluded from those metrics' denominators (coverage).
+  orderDate            DateTime?  @map("order_date")
+  expectedDeliveryDate DateTime?  @map("expected_delivery_date")
   receivingDate     DateTime      @default(now()) @map("receiving_date")
   receivedById      String?       @map("received_by_id") @db.Uuid
   status            ReceiptStatus @default(DRAFT)
