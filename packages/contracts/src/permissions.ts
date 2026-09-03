@@ -62,6 +62,14 @@ export const PERMISSIONS = {
   // Expiry / FEFO (2C.2) — override guards for short-dated receipts and non-FEFO manual allocation
   INVENTORY_EXPIRY_OVERRIDE: 'inventory.expiry_override',
   INVENTORY_FEFO_OVERRIDE: 'inventory.fefo_override',
+
+  // Cycle counting (2C.3) — planning/scheduling over the physical-count engine. Execution still uses
+  // inventory.count; these gate classification, policy, scheduling, and assignment.
+  CYCLE_COUNT_VIEW: 'cycle_count.view',
+  CYCLE_COUNT_CLASSIFY: 'cycle_count.classify',
+  CYCLE_COUNT_SCHEDULE: 'cycle_count.schedule',
+  CYCLE_COUNT_ASSIGN: 'cycle_count.assign',
+  CYCLE_COUNT_MANAGE_POLICY: 'cycle_count.manage_policy',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -114,4 +122,9 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { code: PERMISSIONS.RETURN_DISPOSE, description: 'Dispose returns (damaged / return-to-supplier / dispose)' },
   { code: PERMISSIONS.INVENTORY_EXPIRY_OVERRIDE, description: 'Accept a short-dated receipt below minimum shelf life' },
   { code: PERMISSIONS.INVENTORY_FEFO_OVERRIDE, description: 'Override FEFO allocation with a manual lot selection' },
+  { code: PERMISSIONS.CYCLE_COUNT_VIEW, description: 'View cycle-count classifications, coverage, and tasks' },
+  { code: PERMISSIONS.CYCLE_COUNT_CLASSIFY, description: 'Assign or compute ABC classification' },
+  { code: PERMISSIONS.CYCLE_COUNT_SCHEDULE, description: 'Generate cycle-count tasks and create ad-hoc tasks' },
+  { code: PERMISSIONS.CYCLE_COUNT_ASSIGN, description: 'Assign cycle-count tasks to counters' },
+  { code: PERMISSIONS.CYCLE_COUNT_MANAGE_POLICY, description: 'Manage cycle-count policy (frequencies, thresholds, strategy)' },
 ];

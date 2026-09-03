@@ -904,6 +904,8 @@ model Product {
   returnLines       ReturnLine[]
   lots              InventoryLot[]
   shelfLifePolicies ShelfLifePolicy[]
+  classifications   ProductClassification[]
+  cycleCountTasks   CycleCountTask[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, categoryId])
@@ -1218,6 +1220,121 @@ model ShelfLifePolicy {
   @@unique([organizationId, productId, variantId])
   @@index([organizationId, productId])
   @@map("shelf_life_policies")
+}
+
+// ---------------------------------------------------------------------------
+// Cycle Counting (Phase 2C.3, ADR 0009) — a PLANNING/scheduling layer over the
+// existing lot-aware Physical Count engine. It creates tasks, never counts;
+// execution delegates to StockCount(type=CYCLE). Nothing here touches the ledger.
+// ---------------------------------------------------------------------------
+
+/// ABC counting-priority class — a PLANNING attribute only (ADR 0009 §1). Never inventory state.
+enum ABCClass {
+  A
+  B
+  C
+  UNCLASSIFIED
+}
+
+/// Pluggable ABC scoring model (ADR 0009 §2). 2C.3A ships MANUAL + MOVEMENT_VELOCITY; INVENTORY_VALUE reserved.
+enum ClassificationStrategy {
+  MANUAL
+  MOVEMENT_VELOCITY
+  INVENTORY_VALUE
+}
+
+/// Cycle-count task lifecycle (ADR 0009 §5). OVERDUE is DERIVED from dueAt, never persisted.
+enum CycleCountTaskStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/// How a task originated (ADR 0009 §8). Always explicit.
+enum CycleCountSource {
+  SCHEDULED
+  AD_HOC
+  RECOUNT
+}
+
+/// Org/warehouse-scoped cycle-count policy (ADR 0009 §3). warehouseId uses the NIL-UUID sentinel for the
+/// org-default row; a real warehouse id is a per-warehouse override. Absence of any row ⇒ scheduling disabled.
+model CycleCountPolicy {
+  id             String                 @id @default(uuid()) @db.Uuid
+  organizationId String                 @map("organization_id") @db.Uuid
+  warehouseId    String                 @default("00000000-0000-0000-0000-000000000000") @map("warehouse_id") @db.Uuid
+  strategy       ClassificationStrategy @default(MOVEMENT_VELOCITY)
+  aFrequencyDays Int                    @default(30) @map("a_frequency_days")
+  bFrequencyDays Int                    @default(90) @map("b_frequency_days")
+  cFrequencyDays Int                    @default(180) @map("c_frequency_days")
+  lookbackDays   Int                    @default(90) @map("lookback_days")
+  // Configurable A/B percentile cutoffs (ADR 0009 §2): top aPercent% → A, next bPercent% → B, remainder → C.
+  aPercent       Int                    @default(20) @map("a_percent")
+  bPercent       Int                    @default(30) @map("b_percent")
+  enabled        Boolean                @default(true)
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+
+  @@unique([organizationId, warehouseId])
+  @@map("cycle_count_policies")
+}
+
+/// Computed or manually-assigned ABC class per (product, variant, warehouse) — velocity is warehouse-scoped.
+/// variantId uses the NIL-UUID sentinel for the base product.
+model ProductClassification {
+  id             String                 @id @default(uuid()) @db.Uuid
+  organizationId String                 @map("organization_id") @db.Uuid
+  warehouseId    String                 @map("warehouse_id") @db.Uuid
+  productId      String                 @map("product_id") @db.Uuid
+  variantId      String                 @default("00000000-0000-0000-0000-000000000000") @map("variant_id") @db.Uuid
+  abcClass       ABCClass               @default(UNCLASSIFIED) @map("abc_class")
+  strategy       ClassificationStrategy
+  score          Decimal?               @db.Decimal(18, 4)
+  manual         Boolean                @default(false)
+  classifiedAt   DateTime               @default(now()) @map("classified_at")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([organizationId, warehouseId, productId, variantId])
+  @@index([organizationId, warehouseId, abcClass])
+  @@map("product_classifications")
+}
+
+/// A planned cycle-count task (ADR 0009 §5). Scheduling creates these, not counts. The class/policy context
+/// is SNAPSHOT at generation so a later reclassification never rewrites history (§9). variantId/lotId use the
+/// NIL-UUID sentinel. One ACTIVE task per scope is enforced by a partial unique index (see migration).
+model CycleCountTask {
+  id               String               @id @default(uuid()) @db.Uuid
+  organizationId   String               @map("organization_id") @db.Uuid
+  warehouseId      String               @map("warehouse_id") @db.Uuid
+  productId        String               @map("product_id") @db.Uuid
+  variantId        String               @default("00000000-0000-0000-0000-000000000000") @map("variant_id") @db.Uuid
+  lotId            String               @default("00000000-0000-0000-0000-000000000000") @map("lot_id") @db.Uuid
+
+  abcClass         ABCClass             @map("abc_class")
+  priority         Int                  @default(0)
+  policyContext    Json?                @map("policy_context")
+
+  status           CycleCountTaskStatus @default(PENDING)
+  source           CycleCountSource     @default(SCHEDULED)
+  dueAt            DateTime             @map("due_at")
+
+  assignedToId     String?              @map("assigned_to_id") @db.Uuid
+  physicalCountId  String?              @map("physical_count_id") @db.Uuid
+  supersedesTaskId String?              @map("supersedes_task_id") @db.Uuid
+  completedAt      DateTime?            @map("completed_at")
+
+  createdById      String?              @map("created_by_id") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([organizationId, warehouseId, status])
+  @@index([organizationId, status, dueAt])
+  @@map("cycle_count_tasks")
 }
 
 model WarehouseLocation {

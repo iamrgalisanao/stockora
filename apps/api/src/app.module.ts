@@ -35,6 +35,7 @@ import { ExportModule } from './exports/export.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { ReturnsModule } from './returns/returns.module';
 import { ShelfLifeModule } from './shelf-life/shelf-life.module';
+import { CycleCountModule } from './cycle-count/cycle-count.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -75,6 +76,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     ReservationsModule,
     ReturnsModule,
     ShelfLifeModule,
+    CycleCountModule,
   ],
   controllers: [HealthController],
   providers: [
