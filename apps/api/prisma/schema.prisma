@@ -1459,11 +1459,65 @@ model NotificationRecipient {
   dismissedAt    DateTime? @map("dismissed_at")
   createdAt      DateTime  @default(now()) @map("created_at")
 
-  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  notification Notification            @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  deliveries   NotificationDelivery[]
 
   @@unique([notificationId, userId])
   @@index([userId, readAt])
   @@map("notification_recipients")
+}
+
+// External delivery framework (Phase 2D.2B, ADR 0011 §8) — outbound channels behind the in-app inbox.
+// Strict opt-in: a delivery row is queued only when the recipient has enabled the channel for that type.
+
+enum NotificationChannel {
+  EMAIL
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  DEAD_LETTER
+  SKIPPED
+}
+
+model NotificationDelivery {
+  id                      String                     @id @default(uuid()) @db.Uuid
+  notificationRecipientId String                     @map("notification_recipient_id") @db.Uuid
+  channel                 NotificationChannel
+  status                  NotificationDeliveryStatus @default(PENDING)
+  attemptCount            Int                        @default(0) @map("attempt_count")
+  availableAt             DateTime                   @default(now()) @map("available_at")
+  leaseExpiresAt          DateTime?                  @map("lease_expires_at")
+  sentAt                  DateTime?                  @map("sent_at")
+  deadLetteredAt          DateTime?                  @map("dead_lettered_at")
+  lastError               String?                    @map("last_error")
+  providerMessageId       String?                    @map("provider_message_id")
+  createdAt               DateTime                   @default(now()) @map("created_at")
+  updatedAt               DateTime                   @updatedAt @map("updated_at")
+
+  recipient NotificationRecipient @relation(fields: [notificationRecipientId], references: [id], onDelete: Cascade)
+
+  // One logical delivery per (recipient, channel); retries live on this row, never a new one.
+  @@unique([notificationRecipientId, channel])
+  @@index([status, availableAt])
+  @@map("notification_deliveries")
+}
+
+model NotificationPreference {
+  id               String              @id @default(uuid()) @db.Uuid
+  userId           String              @map("user_id") @db.Uuid
+  notificationType String              @map("notification_type")
+  channel          NotificationChannel
+  enabled          Boolean             @default(false)
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  // No row ⇒ disabled (strict opt-in).
+  @@unique([userId, notificationType, channel])
+  @@map("notification_preferences")
 }
 
 model WarehouseLocation {

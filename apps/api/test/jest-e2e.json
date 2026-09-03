@@ -1,7 +1,8 @@
 {
   "rootDir": "..",
   "testEnvironment": "node",
-  "maxWorkers": 2,
+  "//maxWorkers": "Serial: the e2e suite shares one database and several specs drive the outbox relay + async consumers; parallel workers contend on shared tables (relay claims occasionally under-claim), so isolation requires serial execution.",
+  "maxWorkers": 1,
   "testRegex": "test/.*\\.e2e-spec\\.ts$",
   "moduleFileExtensions": ["js", "json", "ts"],
   "transform": {
