@@ -182,13 +182,13 @@ export class InventoryPostingService {
     return this.postLines(ctx, MovementType.LOT_MIGRATION, input.warehouseId, input.lines, 'lot_migration', input.referenceId);
   }
 
-  /** Stock adjustment in/out with a reason. */
+  /** Stock adjustment in/out with a reason. `referenceType` defaults to stock_adjustment (counts pass stock_count). */
   adjustment(
     ctx: PostContext,
-    input: { warehouseId: string; direction: 'IN' | 'OUT'; referenceId?: string; lines: StockLine[] },
+    input: { warehouseId: string; direction: 'IN' | 'OUT'; referenceType?: string; referenceId?: string; lines: StockLine[] },
   ): Promise<InventoryMovement[]> {
     const type = input.direction === 'IN' ? MovementType.STOCK_ADJUSTMENT_IN : MovementType.STOCK_ADJUSTMENT_OUT;
-    return this.postLines(ctx, type, input.warehouseId, input.lines, 'stock_adjustment', input.referenceId);
+    return this.postLines(ctx, type, input.warehouseId, input.lines, input.referenceType ?? 'stock_adjustment', input.referenceId);
   }
 
   /**

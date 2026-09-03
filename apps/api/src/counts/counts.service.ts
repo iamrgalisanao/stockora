@@ -206,13 +206,13 @@ export class CountsService {
     if (inLines.length > 0) {
       await this.posting.adjustment(
         { organizationId, actorId: user.userId, idempotencyKey: `${base}:IN` },
-        { warehouseId: count.warehouseId, direction: 'IN', referenceId: count.id, lines: inLines },
+        { warehouseId: count.warehouseId, direction: 'IN', referenceType: 'stock_count', referenceId: count.id, lines: inLines },
       );
     }
     if (outLines.length > 0) {
       await this.posting.adjustment(
         { organizationId, actorId: user.userId, idempotencyKey: `${base}:OUT` },
-        { warehouseId: count.warehouseId, direction: 'OUT', referenceId: count.id, lines: outLines },
+        { warehouseId: count.warehouseId, direction: 'OUT', referenceType: 'stock_count', referenceId: count.id, lines: outLines },
       );
     }
 

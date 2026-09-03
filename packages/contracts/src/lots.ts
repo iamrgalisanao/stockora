@@ -22,6 +22,37 @@ export interface LotStockRow {
   available: string; // onHand - reserved - quarantined
 }
 
+/** One ledger event affecting a lot, with its source document resolved (lot movement timeline). */
+export interface LotMovementRow {
+  id: string;
+  occurredAt: string;
+  movementType: string;
+  warehouseId: string;
+  warehouseCode: string;
+  onHandDelta: string;
+  reservedDelta: string;
+  inTransitDelta: string;
+  quarantinedDelta: string;
+  damagedDelta: string;
+  documentType: string | null; // reference type, e.g. goods_receipt / stock_release
+  documentId: string | null;
+  documentReference: string | null; // human number (GR-… / REL-… / …), or a label for non-document events
+  actorId: string | null;
+}
+
+/** A selectable lot for an operational workflow at a specific warehouse (the shared picker contract). */
+export interface PickableLot {
+  lotId: string;
+  lotNumber: string;
+  status: LotStatus;
+  origin: LotOrigin;
+  expiryDate: string | null;
+  onHand: string;
+  reserved: string;
+  quarantined: string;
+  available: string; // onHand - reserved - quarantined at this warehouse
+}
+
 export interface LotResponse {
   id: string;
   lotNumber: string;

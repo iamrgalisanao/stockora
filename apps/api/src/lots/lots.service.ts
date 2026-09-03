@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { LotOrigin, LotResponse, LotStockRow } from '@iw/contracts';
+import type { LotMovementRow, LotOrigin, LotResponse, LotStockRow, PickableLot } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { InventoryPostingService, type StockLine } from '../inventory/inventory-posting.service';
@@ -31,7 +31,25 @@ export interface LotListFilter {
   productId?: string;
   status?: 'ACTIVE' | 'CLOSED' | 'ARCHIVED';
   q?: string;
+  warehouseId?: string; // lots with a balance row in this warehouse
+  supplierId?: string;
+  hasStock?: boolean; // lots with non-zero on-hand somewhere in scope
 }
+
+/** referenceType → the model + human-number column used to resolve a movement's source document. */
+const DOC_SOURCES: Record<string, { model: string; field: string }> = {
+  goods_receipt: { model: 'goodsReceipt', field: 'receiptNumber' },
+  stock_release: { model: 'stockRelease', field: 'releaseNumber' },
+  stock_transfer: { model: 'stockTransfer', field: 'transferNumber' },
+  stock_adjustment: { model: 'stockAdjustment', field: 'adjustmentNumber' },
+  stock_count: { model: 'stockCount', field: 'countNumber' },
+  inventory_return: { model: 'inventoryReturn', field: 'returnNo' },
+};
+const DOC_LABELS: Record<string, string> = {
+  opening_balance: 'Opening balance',
+  lot_migration: 'Legacy lot migration',
+  reversal: 'Reversal',
+};
 
 type LotRow = Prisma.InventoryLotGetPayload<{ include: { product: { select: { sku: true; name: true } } } }>;
 const LOT_INCLUDE = { product: { select: { sku: true, name: true } } } as const;
@@ -128,6 +146,7 @@ export class LotsService {
         organizationId,
         ...(filter.productId ? { productId: filter.productId } : {}),
         ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.supplierId ? { supplierId: filter.supplierId } : {}),
         ...(filter.q
           ? { OR: [{ lotNumber: { contains: filter.q, mode: 'insensitive' } }, { product: { sku: { contains: filter.q, mode: 'insensitive' } } }] }
           : {}),
@@ -149,7 +168,100 @@ export class LotsService {
       _sum: { onHand: true, reserved: true, inTransit: true, quarantined: true, damaged: true },
     });
     const totals = new Map(grouped.map((g) => [g.lotId, g._sum]));
-    return lots.map((l) => this.toResponse(l, totals.get(l.id)));
+
+    // Optional stock-based filters (post-aggregation).
+    let lotIdsInWarehouse: Set<string> | null = null;
+    if (filter.warehouseId) {
+      const rows = await this.prisma.inventoryBalance.findMany({
+        where: { organizationId, warehouseId: filter.warehouseId, lotId: { in: lots.map((l) => l.id) }, onHand: { not: 0 } },
+        select: { lotId: true },
+      });
+      lotIdsInWarehouse = new Set(rows.map((r) => r.lotId));
+    }
+    return lots
+      .filter((l) => {
+        if (lotIdsInWarehouse && !lotIdsInWarehouse.has(l.id)) return false;
+        if (filter.hasStock && !(totals.get(l.id)?.onHand && !totals.get(l.id)!.onHand!.equals(0))) return false;
+        return true;
+      })
+      .map((l) => this.toResponse(l, totals.get(l.id)));
+  }
+
+  /** The chronological ledger timeline for a lot, with each movement's source document resolved. */
+  async movements(organizationId: string, user: RequestUser, id: string): Promise<LotMovementRow[]> {
+    const lot = await this.prisma.inventoryLot.findFirst({ where: { id, organizationId }, select: { id: true } });
+    if (!lot) throw new NotFoundException('Lot not found');
+    const scope = user.warehouseScope;
+    const ms = await this.prisma.inventoryMovement.findMany({
+      where: { organizationId, lotId: id, ...(scope !== null ? { warehouseId: { in: scope } } : {}) },
+      include: { warehouse: { select: { code: true } } },
+      orderBy: [{ postedAt: 'asc' }, { txnNumber: 'asc' }],
+    });
+
+    // Resolve human document numbers per referenceType in one query each (no N+1).
+    const refs = new Map<string, string>(); // referenceId -> number
+    const byType = new Map<string, Set<string>>();
+    for (const m of ms) {
+      if (m.referenceType && m.referenceId && DOC_SOURCES[m.referenceType]) {
+        (byType.get(m.referenceType) ?? byType.set(m.referenceType, new Set()).get(m.referenceType)!).add(m.referenceId);
+      }
+    }
+    const delegates = this.prisma as unknown as Record<string, { findMany: (a: unknown) => Promise<Array<Record<string, string>>> }>;
+    for (const [type, ids] of byType) {
+      const src = DOC_SOURCES[type];
+      if (!src) continue;
+      const rows = await delegates[src.model]!.findMany({ where: { organizationId, id: { in: [...ids] } }, select: { id: true, [src.field]: true } });
+      for (const r of rows) {
+        const num = r[src.field];
+        if (r.id && num) refs.set(r.id, num);
+      }
+    }
+
+    return ms.map((m) => ({
+      id: m.id,
+      occurredAt: m.postedAt.toISOString(),
+      movementType: m.movementType,
+      warehouseId: m.warehouseId,
+      warehouseCode: m.warehouse.code,
+      onHandDelta: m.onHandDelta.toString(),
+      reservedDelta: m.reservedDelta.toString(),
+      inTransitDelta: m.inTransitDelta.toString(),
+      quarantinedDelta: m.quarantinedDelta.toString(),
+      damagedDelta: m.damagedDelta.toString(),
+      documentType: m.referenceType,
+      documentId: m.referenceId,
+      documentReference: (m.referenceId && refs.get(m.referenceId)) ?? (m.referenceType ? DOC_LABELS[m.referenceType] ?? null : null),
+      actorId: m.performedById,
+    }));
+  }
+
+  /** ACTIVE lots of a product selectable at a warehouse, with that warehouse's buckets (the picker feed). */
+  async pickable(organizationId: string, user: RequestUser, productId: string, warehouseId: string, variantId?: string): Promise<PickableLot[]> {
+    if (user.warehouseScope !== null && !user.warehouseScope.includes(warehouseId)) {
+      throw new ForbiddenException('You do not have access to this warehouse');
+    }
+    const lots = await this.prisma.inventoryLot.findMany({
+      where: { organizationId, productId, variantId: variantId ?? NIL_UUID, status: 'ACTIVE' },
+      orderBy: [{ expiryDate: 'asc' }, { lotNumber: 'asc' }],
+    });
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: { organizationId, productId, variantId: variantId ?? NIL_UUID, warehouseId, lotId: { in: lots.map((l) => l.id) } },
+    });
+    const balByLot = new Map(balances.map((b) => [b.lotId, b]));
+    return lots
+      .map((l) => {
+        const b = balByLot.get(l.id);
+        const onHand = b ? b.onHand : new Prisma.Decimal(0);
+        const reserved = b ? b.reserved : new Prisma.Decimal(0);
+        const quarantined = b ? b.quarantined : new Prisma.Decimal(0);
+        return {
+          lotId: l.id, lotNumber: l.lotNumber, status: l.status, origin: l.origin,
+          expiryDate: l.expiryDate ? l.expiryDate.toISOString() : null,
+          onHand: onHand.toString(), reserved: reserved.toString(), quarantined: quarantined.toString(),
+          available: onHand.sub(reserved).sub(quarantined).toString(),
+        };
+      })
+      .filter((l) => Number(l.onHand) > 0); // only lots with stock at this warehouse are pickable
   }
 
   async get(organizationId: string, user: RequestUser, id: string): Promise<LotResponse> {
