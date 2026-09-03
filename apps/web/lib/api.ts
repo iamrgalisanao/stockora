@@ -64,6 +64,7 @@ import type {
   CycleCountPolicyResponse,
   ProductClassificationRow,
   MembershipUserResponse,
+  InventoryPositionRow,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -233,6 +234,12 @@ export const api = {
     if (params?.productId) q.set('productId', params.productId);
     const qs = q.toString();
     return request<BalanceResponse[]>(`/inventory/balances${qs ? `?${qs}` : ''}`);
+  },
+  positions: (filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<InventoryPositionRow[]>(`/inventory/positions${qs ? `?${qs}` : ''}`);
   },
 
   receiving: {

@@ -58,7 +58,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2C.3B — Count Session Integration (start task → the one authoritative StockCount(type=CYCLE), scope-exact snapshot; complete only after POSTED via the existing ledger path; replay/concurrency-safe start; coordinated cancel; recounts as new superseding work):** ✅ [docs/PHASE-2C3B-COUNT-SESSION.md](docs/PHASE-2C3B-COUNT-SESSION.md)
   - **2C.3C — UX + Metrics (dashboard KPIs [due/overdue, on-time coverage %, accuracy %, variance], worklist with ABC/status/assignee/source/date filters + views, task detail with why-context + policy snapshot routing into the existing count flow, assignment UI; one centralized metrics service):** ✅ [docs/PHASE-2C3C-UX-METRICS.md](docs/PHASE-2C3C-UX-METRICS.md)
 - **✅ 2C.3 — Cycle Counting complete.**
-- **Next:** 2C.4 Inventory-position model (unified on-hand / reserved / in-transit view) — final Phase 2C item.
+- **✅ 2C.4 — Inventory-position model** (one read model over ledger-backed balances feeding a product→warehouse→lot roll-up and a "what can I promise" availability lens; per-bucket drill-downs to reservations/returns/transfers/lots; `available = onHand − reserved − quarantined`, damaged outside on-hand, in-transit never promiseable): ✅ [docs/PHASE-2C4-INVENTORY-POSITION.md](docs/PHASE-2C4-INVENTORY-POSITION.md)
+- **✅ Phase 2C — Traceability complete** (Batch/Lot · Expiry+FEFO · Cycle Counting · Inventory Position).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).
