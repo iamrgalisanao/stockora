@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsDateString,
@@ -25,6 +26,17 @@ export class ReceiptItemInputDto {
   @IsOptional() @IsDateString() expiryDate?: string;
   @IsOptional() @IsUUID() locationId?: string;
   @IsOptional() @IsString() @MaxLength(500) remarks?: string;
+
+  /**
+   * Per-unit serial numbers for a serialized product captured at receipt (ADR 0012 §6). In RECEIPT mode
+   * the count must match the received quantity; validated and written atomically when the receipt posts.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10000)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  serialNumbers?: string[];
 }
 
 export class CreateReceiptDto {

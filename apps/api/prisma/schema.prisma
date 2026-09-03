@@ -321,6 +321,9 @@ model GoodsReceiptItem {
   batchNumber  String?  @map("batch_number")
   expiryDate   DateTime? @map("expiry_date")
   locationId   String?  @map("location_id") @db.Uuid
+  // Per-unit serial identities captured on the line (2D.3A, ADR 0012) — RECEIPT-mode serialized products.
+  // Empty for non-serialized / capture-at-issue products.
+  serialNumbers String[] @default([]) @map("serial_numbers")
   remarks      String?
 
   receipt GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
@@ -909,6 +912,7 @@ model Product {
   shelfLifePolicies ShelfLifePolicy[]
   classifications   ProductClassification[]
   cycleCountTasks   CycleCountTask[]
+  serials           InventorySerial[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, categoryId])
@@ -1223,6 +1227,69 @@ model ShelfLifePolicy {
   @@unique([organizationId, productId, variantId])
   @@index([organizationId, productId])
   @@map("shelf_life_policies")
+}
+
+// ---------------------------------------------------------------------------
+// Serial tracking (Phase 2D.3, ADR 0012) — unit-level identity as a registry-with-state, NOT a StockBalance
+// grain. One row = one physical unit (no quantity). The ledger stays authoritative for quantities; the
+// registry reconciles to it. Serial nests under a lot for batch+serial products.
+// ---------------------------------------------------------------------------
+
+enum SerialCaptureMode {
+  RECEIPT
+  ISSUE
+}
+
+/// Physical lifecycle (ADR 0012 §5). RESERVED is defined but unused in v1 (reservations are quantity-level).
+enum SerialStatus {
+  IN_STOCK
+  RESERVED
+  IN_TRANSIT
+  QUARANTINED
+  DAMAGED
+  ISSUED
+  DISPOSED
+}
+
+/// Per-product serial capture policy (ADR 0012 §2). Product.isSerialized says WHETHER; this says WHEN.
+model SerialTrackingPolicy {
+  id                       String            @id @default(uuid()) @db.Uuid
+  organizationId           String            @map("organization_id") @db.Uuid
+  productId                String            @map("product_id") @db.Uuid
+  captureMode              SerialCaptureMode @default(RECEIPT) @map("capture_mode")
+  requireLotWhenBatchTracked Boolean         @default(true) @map("require_lot_when_batch_tracked")
+  createdAt                DateTime          @default(now()) @map("created_at")
+  updatedAt                DateTime          @updatedAt @map("updated_at")
+
+  @@unique([organizationId, productId])
+  @@map("serial_tracking_policies")
+}
+
+/// The serial registry — one row per physical unit (ADR 0012 §3). variantId uses the NIL sentinel.
+model InventorySerial {
+  id                String       @id @default(uuid()) @db.Uuid
+  organizationId    String       @map("organization_id") @db.Uuid
+  productId         String       @map("product_id") @db.Uuid
+  variantId         String       @default("00000000-0000-0000-0000-000000000000") @map("variant_id") @db.Uuid
+  serialNumber      String       @map("serial_number")
+  lotId             String?      @map("lot_id") @db.Uuid
+  status            SerialStatus @default(IN_STOCK)
+  currentWarehouseId String?     @map("current_warehouse_id") @db.Uuid
+  currentLocationId String?      @map("current_location_id") @db.Uuid
+  lastMovementId    String?      @map("last_movement_id") @db.Uuid
+  receivedAt        DateTime?    @map("received_at")
+  issuedAt          DateTime?    @map("issued_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  // Product-scoped uniqueness (ADR 0012 §3) — case-sensitive; safe for manufacturer serial schemes.
+  @@unique([organizationId, productId, variantId, serialNumber])
+  @@index([organizationId, productId, status])
+  @@index([organizationId, currentWarehouseId, status])
+  @@index([organizationId, lotId])
+  @@map("inventory_serials")
 }
 
 // ---------------------------------------------------------------------------

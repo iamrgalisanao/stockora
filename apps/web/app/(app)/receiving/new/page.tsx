@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ProductResponse, SupplierResponse, WarehouseResponse } from '@iw/contracts';
 import { api, type CreateReceiptBody } from '../../../../lib/api';
@@ -10,9 +10,15 @@ interface Line {
   expectedQty: string;
   receivedQty: string;
   unitCost: string;
+  batchNumber: string;
+  /** One serial per line/comma — parsed into serialNumbers[] on submit (serialized products). */
+  serials: string;
 }
 
-const emptyLine = (): Line => ({ productId: '', expectedQty: '', receivedQty: '', unitCost: '' });
+const emptyLine = (): Line => ({ productId: '', expectedQty: '', receivedQty: '', unitCost: '', batchNumber: '', serials: '' });
+
+const parseSerials = (raw: string): string[] =>
+  raw.split(/[\n,]/).map((s) => s.trim()).filter((s) => s.length > 0);
 
 export default function NewReceiptPage() {
   const router = useRouter();
@@ -57,12 +63,18 @@ export default function NewReceiptPage() {
     }
     const items = lines
       .filter((l) => l.productId)
-      .map((l) => ({
-        productId: l.productId,
-        expectedQty: l.expectedQty ? Number(l.expectedQty) : undefined,
-        receivedQty: l.receivedQty ? Number(l.receivedQty) : undefined,
-        unitCost: l.unitCost ? Number(l.unitCost) : undefined,
-      }));
+      .map((l) => {
+        const p = productById.get(l.productId);
+        const serialNumbers = p?.isSerialized ? parseSerials(l.serials) : undefined;
+        return {
+          productId: l.productId,
+          expectedQty: l.expectedQty ? Number(l.expectedQty) : undefined,
+          receivedQty: l.receivedQty ? Number(l.receivedQty) : undefined,
+          unitCost: l.unitCost ? Number(l.unitCost) : undefined,
+          batchNumber: p?.isBatchTracked && l.batchNumber ? l.batchNumber : undefined,
+          serialNumbers: serialNumbers && serialNumbers.length > 0 ? serialNumbers : undefined,
+        };
+      });
     if (items.length === 0) {
       setError('Add at least one product line');
       return null;
@@ -145,26 +157,74 @@ export default function NewReceiptPage() {
                 </tr>
               </thead>
               <tbody>
-                {lines.map((l, i) => (
-                  <tr key={i}>
-                    <td style={{ minWidth: 220 }}>
-                      <select className="inline" value={l.productId} onChange={(e) => onPickProduct(i, e.target.value)}>
-                        <option value="">Select product…</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="num"><input className="inline" style={{ width: 90, textAlign: 'right' }} type="number" min="0" value={l.expectedQty} onChange={(e) => setLine(i, { expectedQty: e.target.value })} /></td>
-                    <td className="num"><input className="inline" style={{ width: 90, textAlign: 'right' }} type="number" min="0" value={l.receivedQty} onChange={(e) => setLine(i, { receivedQty: e.target.value })} /></td>
-                    <td className="num"><input className="inline" style={{ width: 100, textAlign: 'right' }} type="number" min="0" step="0.01" value={l.unitCost} onChange={(e) => setLine(i, { unitCost: e.target.value })} /></td>
-                    <td>
-                      {lines.length > 1 && (
-                        <button className="btn secondary small" onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))}>✕</button>
+                {lines.map((l, i) => {
+                  const p = l.productId ? productById.get(l.productId) : undefined;
+                  const serialCount = p?.isSerialized ? parseSerials(l.serials).length : 0;
+                  const receivedNum = Number(l.receivedQty || '0');
+                  const serialMismatch = p?.isSerialized && l.serials.trim() !== '' && serialCount !== receivedNum;
+                  return (
+                    <React.Fragment key={i}>
+                      <tr>
+                        <td style={{ minWidth: 220 }}>
+                          <select className="inline" value={l.productId} onChange={(e) => onPickProduct(i, e.target.value)}>
+                            <option value="">Select product…</option>
+                            {products.map((prod) => (
+                              <option key={prod.id} value={prod.id}>{prod.sku} — {prod.name}</option>
+                            ))}
+                          </select>
+                          {p && (p.isSerialized || p.isBatchTracked) && (
+                            <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
+                              {p.isBatchTracked && <span>batch-tracked</span>}
+                              {p.isBatchTracked && p.isSerialized && <span> · </span>}
+                              {p.isSerialized && <span>serialized</span>}
+                            </div>
+                          )}
+                        </td>
+                        <td className="num"><input className="inline" style={{ width: 90, textAlign: 'right' }} type="number" min="0" value={l.expectedQty} onChange={(e) => setLine(i, { expectedQty: e.target.value })} /></td>
+                        <td className="num"><input className="inline" style={{ width: 90, textAlign: 'right' }} type="number" min="0" value={l.receivedQty} onChange={(e) => setLine(i, { receivedQty: e.target.value })} /></td>
+                        <td className="num"><input className="inline" style={{ width: 100, textAlign: 'right' }} type="number" min="0" step="0.01" value={l.unitCost} onChange={(e) => setLine(i, { unitCost: e.target.value })} /></td>
+                        <td>
+                          {lines.length > 1 && (
+                            <button className="btn secondary small" onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}>✕</button>
+                          )}
+                        </td>
+                      </tr>
+                      {p && (p.isBatchTracked || p.isSerialized) && (
+                        <tr>
+                          <td colSpan={5} style={{ background: 'var(--surface-2, #fafafa)', paddingTop: 8, paddingBottom: 10 }}>
+                            <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                              {p.isBatchTracked && (
+                                <div>
+                                  <label style={{ fontSize: 12 }}>Batch / lot number *</label>
+                                  <input className="inline" style={{ width: 180 }} value={l.batchNumber} onChange={(e) => setLine(i, { batchNumber: e.target.value })} placeholder="e.g. LOT-2026-01" />
+                                </div>
+                              )}
+                              {p.isSerialized && (
+                                <div style={{ flex: 1, minWidth: 240 }}>
+                                  <label style={{ fontSize: 12 }}>
+                                    Serial numbers (one per line){' '}
+                                    <span className={serialMismatch ? 'error' : 'muted'} style={{ fontSize: 11 }}>
+                                      — {serialCount} entered{receivedNum > 0 ? ` of ${receivedNum}` : ''}
+                                    </span>
+                                  </label>
+                                  <textarea
+                                    style={{ width: '100%', minHeight: 64, fontFamily: 'monospace', fontSize: 12 }}
+                                    value={l.serials}
+                                    onChange={(e) => setLine(i, { serials: e.target.value })}
+                                    placeholder={'SN-0001\nSN-0002\nSN-0003'}
+                                  />
+                                  <div className="muted" style={{ fontSize: 11 }}>
+                                    Captured per unit at receipt. Count must match the received quantity. Leave blank if this product captures serials at issue.
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
