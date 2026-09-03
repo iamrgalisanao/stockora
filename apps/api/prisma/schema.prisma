@@ -1340,6 +1340,51 @@ model CycleCountTask {
   @@map("cycle_count_tasks")
 }
 
+// ---------------------------------------------------------------------------
+// Transactional Outbox (Phase 2D.1, ADR 0010) — the reliable seam between a committed domain fact and its
+// asynchronous, at-least-once, retryable delivery. The row is inserted INSIDE the same DB transaction as the
+// business mutation; a DB-backed relay (2D.1B) claims and publishes it. This is NOT the audit log.
+// ---------------------------------------------------------------------------
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+  DEAD_LETTER
+}
+
+model OutboxEvent {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  eventType      String       @map("event_type")
+  aggregateType  String       @map("aggregate_type")
+  aggregateId    String       @map("aggregate_id") @db.Uuid
+  occurredAt     DateTime     @default(now()) @map("occurred_at")
+  correlationId  String?      @map("correlation_id") @db.Uuid
+  causationId    String?      @map("causation_id") @db.Uuid
+  source         String       @default("SYSTEM")
+  schemaVersion  Int          @default(1) @map("schema_version")
+  payload        Json
+  // Optional idempotency key: a replayed domain command carrying the same key does not enqueue a duplicate
+  // logical event (unique per org; inserted with ON CONFLICT DO NOTHING so it never aborts the domain tx).
+  dedupeKey      String?      @map("dedupe_key")
+  status         OutboxStatus @default(PENDING)
+  attemptCount   Int          @default(0) @map("attempt_count")
+  availableAt    DateTime     @default(now()) @map("available_at")
+  leaseExpiresAt DateTime?    @map("lease_expires_at")
+  publishedAt    DateTime?    @map("published_at")
+  lastError      String?      @map("last_error")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, dedupeKey])
+  @@index([status, availableAt])
+  @@index([organizationId, aggregateType, aggregateId])
+  @@index([organizationId, eventType, occurredAt])
+  @@map("outbox_events")
+}
+
 model WarehouseLocation {
   id              String   @id @default(uuid()) @db.Uuid
   organizationId  String   @map("organization_id") @db.Uuid

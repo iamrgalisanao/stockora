@@ -60,6 +60,10 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ 2C.3 — Cycle Counting complete.**
 - **✅ 2C.4 — Inventory-position model** (one read model over ledger-backed balances feeding a product→warehouse→lot roll-up and a "what can I promise" availability lens; per-bucket drill-downs to reservations/returns/transfers/lots; `available = onHand − reserved − quarantined`, damaged outside on-hand, in-transit never promiseable): ✅ [docs/PHASE-2C4-INVENTORY-POSITION.md](docs/PHASE-2C4-INVENTORY-POSITION.md)
 - **✅ Phase 2C — Traceability complete** (Batch/Lot · Expiry+FEFO · Cycle Counting · Inventory Position).
+- **2D.1 — Events / Transactional Outbox** (reliable async delivery of committed domain facts; [ADR 0010](docs/adr/0010-transactional-outbox.md)):
+  - **2D.1A — Outbox Core (OutboxEvent schema; transactional `enqueue(tx, …)` committing atomically with the business mutation; versioned envelope with correlation/causation/source; dedupe-on-replay; no dispatch yet):** ✅ [docs/PHASE-2D1A-OUTBOX-CORE.md](docs/PHASE-2D1A-OUTBOX-CORE.md)
+- **Next:** 2D.1B Relay + Delivery Semantics (DB-backed worker, claim/lease, retry/backoff, dead-letter, idempotent consumers).
+- Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).
