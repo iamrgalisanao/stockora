@@ -1,12 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, ReleaseStatus } from '@prisma/client';
-import type { ReleaseListItem, ReleaseResponse } from '@iw/contracts';
+import { PERMISSIONS, type ReleaseListItem, type ReleaseResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService, type StockLine } from '../inventory/inventory-posting.service';
 import { ReservationsService } from '../reservations/reservations.service';
+import { LotsService } from '../lots/lots.service';
 import { NIL_UUID } from '../inventory/inventory.constants';
 import { DEFAULT_BUSINESS_TZ, isExpired } from '../common/business-date';
 import {
@@ -32,7 +33,25 @@ export class ReleasesService {
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
     private readonly reservations: ReservationsService,
+    private readonly lots: LotsService,
   ) {}
+
+  /** Order-insensitive per-lot equality of two allocation sets (normalizes split entries by summing). */
+  private allocationsMatch(
+    submitted: Array<{ lotId: string; quantity: Prisma.Decimal }>,
+    canonical: Array<{ lotId: string; quantity: string }>,
+  ): boolean {
+    const norm = (pairs: Array<[string, Prisma.Decimal]>) => {
+      const m = new Map<string, Prisma.Decimal>();
+      for (const [lotId, q] of pairs) m.set(lotId, (m.get(lotId) ?? new Prisma.Decimal(0)).add(q));
+      return m;
+    };
+    const a = norm(submitted.map((s) => [s.lotId, new Prisma.Decimal(s.quantity)]));
+    const b = norm(canonical.map((c) => [c.lotId, new Prisma.Decimal(c.quantity)]));
+    if (a.size !== b.size) return false;
+    for (const [lotId, q] of a) { const bv = b.get(lotId); if (!bv || !bv.equals(q)) return false; }
+    return true;
+  }
 
   async list(organizationId: string, user: RequestUser): Promise<ReleaseListItem[]> {
     const scope = user.warehouseScope !== null ? { in: user.warehouseScope } : undefined;
@@ -217,6 +236,7 @@ export class ReleasesService {
     user: RequestUser,
     id: string,
     idempotencyKey?: string,
+    fefoOverrideReason?: string,
   ): Promise<ReleaseResponse> {
     const release = await this.load(organizationId, id);
     await this.warehouses.assertAccess(organizationId, user, release.warehouseId);
@@ -237,22 +257,65 @@ export class ReleasesService {
       }
     }
 
-    // Lot allocation policy (ADR 0007): a batch line must carry allocations summing to its approved
-    // quantity; a non-batch line must not. Allocations are the seam FEFO will later auto-generate.
+    // Resolve the effective lot allocations per batch line (ADR 0007 seam + ADR 0008 FEFO). A batch line's
+    // allocations are either operator-submitted (MANUAL, or a reviewed FEFO plan) or, under a FEFO policy
+    // with none submitted, generated deterministically here. A submitted plan that materially bypasses an
+    // earlier-expiring eligible lot requires inventory.fefo_override + a reason, and is audited.
     const ZERO = new Prisma.Decimal(0);
+    const effective = new Map<string, Array<{ lotId: string; quantity: Prisma.Decimal }>>();
     for (const i of approved) {
       const q = new Prisma.Decimal(i.approvedQty);
-      const allocSum = i.allocations.reduce((a, al) => a.add(al.quantity), ZERO);
-      if (i.product.isBatchTracked) {
-        if (i.allocations.length === 0) throw new BadRequestException(`Line for ${i.product.sku} is batch-tracked and requires lot allocations`);
+      if (!i.product.isBatchTracked) {
+        if (i.allocations.length > 0) throw new BadRequestException(`Line for ${i.product.sku} is not batch-tracked and cannot carry lot allocations`);
+        continue;
+      }
+      const strategy = await this.lots.allocationStrategyFor(organizationId, i.productId, i.variantId ?? NIL_UUID);
+      if (i.allocations.length === 0) {
+        if (strategy !== 'FEFO') throw new BadRequestException(`Line for ${i.product.sku} is batch-tracked and requires lot allocations`);
+        const plan = await this.lots.fefoPlan(organizationId, user, i.productId, i.variantId ?? NIL_UUID, release.warehouseId, q);
+        if (!plan.complete) throw new BadRequestException(`Insufficient eligible (non-expired) stock to FEFO-allocate ${i.product.sku}`);
+        effective.set(i.id, plan.allocations.map((a) => ({ lotId: a.lotId, quantity: new Prisma.Decimal(a.quantity) })));
+      } else {
+        const allocSum = i.allocations.reduce((a, al) => a.add(al.quantity), ZERO);
         if (!allocSum.equals(q)) throw new BadRequestException(`Lot allocations for ${i.product.sku} must sum to the approved quantity`);
-      } else if (i.allocations.length > 0) {
-        throw new BadRequestException(`Line for ${i.product.sku} is not batch-tracked and cannot carry lot allocations`);
+        // Revalidate the submitted plan is still postable (ADR 0008 §7). A plan gone stale since preview
+        // (a chosen lot drained by another release) is a conflict — never silently reallocated.
+        const subBalances = await this.prisma.inventoryBalance.findMany({
+          where: { organizationId, warehouseId: release.warehouseId, productId: i.productId, variantId: i.variantId ?? NIL_UUID, lotId: { in: i.allocations.map((a) => a.lotId) } },
+        });
+        const availByLot = new Map(subBalances.map((b) => [b.lotId, b.onHand.sub(b.reserved).sub(b.quarantined)]));
+        for (const al of i.allocations) {
+          if (new Prisma.Decimal(al.quantity).gt(availByLot.get(al.lotId) ?? ZERO)) {
+            throw new ConflictException(`Allocation for ${i.product.sku} is stale — a selected lot no longer has enough available; refresh the plan`);
+          }
+        }
+        if (strategy === 'FEFO') {
+          const canonical = await this.lots.fefoPlan(organizationId, user, i.productId, i.variantId ?? NIL_UUID, release.warehouseId, q);
+          if (!this.allocationsMatch(i.allocations, canonical.allocations)) {
+            // Material deviation from FEFO — requires explicit authorized justification (ADR 0008 §6).
+            if (!user.permissions.includes(PERMISSIONS.INVENTORY_FEFO_OVERRIDE)) {
+              throw new ForbiddenException(`Releasing ${i.product.sku} against a non-FEFO lot selection requires inventory.fefo_override`);
+            }
+            if (!fefoOverrideReason || !fefoOverrideReason.trim()) {
+              throw new BadRequestException('A reason is required to override FEFO allocation');
+            }
+            await this.audit.record({
+              organizationId, userId: user.userId, action: 'release.fefo_override', entityType: 'stock_release',
+              entityId: id, entityDisplay: release.releaseNumber, warehouseId: release.warehouseId,
+              newValue: {
+                productId: i.productId, requestedQuantity: q.toString(), reason: fefoOverrideReason,
+                recommended: canonical.allocations.map((a) => ({ lotId: a.lotId, quantity: a.quantity })),
+                submitted: i.allocations.map((a) => ({ lotId: a.lotId, quantity: a.quantity.toString() })),
+              },
+            });
+          }
+        }
+        effective.set(i.id, i.allocations.map((a) => ({ lotId: a.lotId, quantity: new Prisma.Decimal(a.quantity) })));
       }
     }
 
     // Expired lots cannot enter normal outbound allocation (ADR 0008 §2). Physical stock is untouched.
-    const allocLotIds = [...new Set(approved.flatMap((i) => i.allocations.map((a) => a.lotId)))];
+    const allocLotIds = [...new Set([...effective.values()].flat().map((a) => a.lotId))];
     if (allocLotIds.length > 0) {
       const allocLots = await this.prisma.inventoryLot.findMany({
         where: { organizationId, id: { in: allocLotIds } }, select: { id: true, lotNumber: true, expiryDate: true },
@@ -265,18 +328,16 @@ export class ReleasesService {
     }
 
     // Build posting lines. Non-batch: one SALES_RELEASE per item (on_hand −q, and reserved −q on the same
-    // NIL row when reservation-backed). Batch: one SALES_RELEASE per allocation (on_hand −q at the lot);
-    // the reservation's `reserved` bucket lives on the NIL row and is decremented directly below (ADR 0005
-    // — reservations are off-ledger, so the commitment accounting is not a physical movement).
+    // NIL row when reservation-backed). Batch: one SALES_RELEASE per effective allocation (on_hand −q at the
+    // lot); the reservation's `reserved` bucket lives on the NIL row and is decremented directly below.
     const lines: StockLine[] = [];
     for (const i of approved) {
       const q = new Prisma.Decimal(i.approvedQty);
       if (i.product.isBatchTracked) {
-        for (const al of i.allocations) {
-          const aq = new Prisma.Decimal(al.quantity);
+        for (const al of effective.get(i.id) ?? []) {
           lines.push({
             productId: i.productId, variantId: i.variantId, quantity: al.quantity, locationId: i.locationId, lotId: al.lotId,
-            deltas: { onHand: aq.neg(), reserved: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO },
+            deltas: { onHand: al.quantity.neg(), reserved: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO },
           });
         }
       } else {

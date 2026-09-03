@@ -13,6 +13,24 @@ export type LotExpiryState = (typeof LOT_EXPIRY_STATES)[number];
 /** Org/global default window for "expiring soon" when a policy sets no override. */
 export const DEFAULT_EXPIRING_SOON_DAYS = 30;
 
+/** One line of an allocation plan (which lot, how much). */
+export interface AllocationPlanLine {
+  lotId: string;
+  lotNumber: string;
+  expiryDate: string | null;
+  quantity: string;
+}
+
+/** A read-only allocation plan produced by a strategy (FEFO or a manual echo). Advisory until posted. */
+export interface AllocationPlan {
+  requestedQuantity: string;
+  allocatedQuantity: string;
+  complete: boolean; // allocatedQuantity == requestedQuantity from eligible stock
+  strategy: AllocationStrategy;
+  generatedAt: string;
+  allocations: AllocationPlanLine[];
+}
+
 export interface ShelfLifePolicyResponse {
   productId: string;
   variantId: string | null;

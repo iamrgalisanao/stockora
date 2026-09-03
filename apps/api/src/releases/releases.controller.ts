@@ -15,6 +15,7 @@ import { ReleasesService } from './releases.service';
 import {
   ApproveReleaseDto,
   CreateReleaseDto,
+  PostReleaseDto,
   RejectReleaseDto,
   UpdateReleaseDto,
 } from './dto/release.dto';
@@ -82,9 +83,10 @@ export class ReleasesController {
   post(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PostReleaseDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<ReleaseResponse> {
-    return this.releases.post(user.organizationId, user, id, idempotencyKey);
+    return this.releases.post(user.organizationId, user, id, idempotencyKey, dto?.fefoOverrideReason);
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_RELEASE)

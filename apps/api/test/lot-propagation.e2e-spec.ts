@@ -113,7 +113,8 @@ describe('Lot propagation (e2e, 2C.1B)', () => {
     await seedLot(p, whA, 17, 'LOT-B'); // product total 20, but LOT-A only has 3
     const r = await release(whA, [{ productId: p, requestedQty: 10, allocations: [{ lotId: a, quantity: 10 }] }]);
     await drive(r.id);
-    await http().post(`/api/releases/${r.id}/post`).set(auth()).expect(403); // LOT-A has only 3 → negative-stock guard
+    // LOT-A has only 3 — over-allocating a lot is rejected as a conflict (availability revalidation, 2C.2B).
+    await http().post(`/api/releases/${r.id}/post`).set(auth()).expect(409);
   });
 
   it('a multi-lot release posts correct independent lot balances and is idempotent', async () => {

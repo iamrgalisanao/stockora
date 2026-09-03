@@ -1,5 +1,6 @@
 import { Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { LotExpiryState, LotMovementRow, LotResponse, PickableLot, PERMISSIONS } from '@iw/contracts';
+import { AllocationPlan, LotExpiryState, LotMovementRow, LotResponse, PickableLot, PERMISSIONS } from '@iw/contracts';
+import { Prisma } from '@prisma/client';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { LotsService } from './lots.service';
@@ -40,6 +41,20 @@ export class LotsController {
     @Query('variantId') variantId?: string,
   ): Promise<PickableLot[]> {
     return this.lots.pickable(user.organizationId, user, productId, warehouseId, variantId);
+  }
+
+  /** Advisory FEFO allocation preview (ADR 0008 §7) — read-only; authoritative allocation happens at post. */
+  @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
+  @Get('fefo-plan')
+  fefoPlan(
+    @CurrentUser() user: RequestUser,
+    @Query('productId', ParseUUIDPipe) productId: string,
+    @Query('warehouseId', ParseUUIDPipe) warehouseId: string,
+    @Query('quantity') quantity: string,
+    @Query('variantId') variantId?: string,
+  ): Promise<AllocationPlan> {
+    const qty = new Prisma.Decimal(quantity || '0');
+    return this.lots.fefoPlan(user.organizationId, user, productId, variantId ?? '00000000-0000-0000-0000-000000000000', warehouseId, qty);
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_VIEW)
