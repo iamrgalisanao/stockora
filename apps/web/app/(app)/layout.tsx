@@ -43,6 +43,7 @@ const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> 
       { href: '/warehouses', label: 'Warehouses' },
       { href: '/imports', label: 'Import' },
       { href: '/audit', label: 'Audit Explorer' },
+      { href: '/outbox', label: 'Outbox Ops' },
       { href: '/admin/categories', label: 'Categories' },
       { href: '/admin/brands', label: 'Brands' },
       { href: '/admin/units', label: 'Units' },

@@ -1398,6 +1398,25 @@ model ConsumerReceipt {
   @@map("consumer_receipts")
 }
 
+/// Read-model projection of delivered domain facts (2D.1C) — the first internal outbox consumer. Proves the
+/// domain-tx → outbox → relay → idempotent consumer → durable projection path without any notification
+/// semantics. Unique eventId makes the projection idempotent on replay. Seed for 2D.2 Notifications.
+model OperationalFactProjection {
+  id             String   @id @default(uuid()) @db.Uuid
+  eventId        String   @unique @map("event_id") @db.Uuid
+  eventType      String   @map("event_type")
+  organizationId String   @map("organization_id") @db.Uuid
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id") @db.Uuid
+  occurredAt     DateTime @map("occurred_at")
+  summary        String
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, occurredAt])
+  @@map("operational_fact_projections")
+}
+
 model WarehouseLocation {
   id              String   @id @default(uuid()) @db.Uuid
   organizationId  String   @map("organization_id") @db.Uuid
