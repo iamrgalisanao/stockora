@@ -1,9 +1,14 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import {
   PERMISSIONS,
+  ABC_CLASSES,
+  CYCLE_COUNT_SOURCES,
   CYCLE_COUNT_TASK_STATUSES,
+  type ABCClass,
   type CycleCountCoverageRow,
+  type CycleCountMetrics,
   type CycleCountPolicyResponse,
+  type CycleCountSource,
   type CycleCountTaskResponse,
   type CycleCountTaskStatus,
   type ProductClassificationRow,
@@ -56,6 +61,18 @@ export class CycleCountController {
     return this.service.setClassification(user.organizationId, user, dto);
   }
 
+  // ---- Dashboard metrics (read model) ----
+  @RequirePermissions(PERMISSIONS.CYCLE_COUNT_VIEW)
+  @Get('metrics')
+  metrics(
+    @CurrentUser() user: RequestUser,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<CycleCountMetrics> {
+    return this.service.metrics(user.organizationId, user, { warehouseId, from, to });
+  }
+
   // ---- Coverage ----
   @RequirePermissions(PERMISSIONS.CYCLE_COUNT_VIEW)
   @Get('coverage')
@@ -75,10 +92,22 @@ export class CycleCountController {
     @Query('warehouseId') warehouseId?: string,
     @Query('status') status?: string,
     @Query('overdue') overdue?: string,
+    @Query('abcClass') abcClass?: string,
+    @Query('source') source?: string,
+    @Query('assignedToId') assignedToId?: string,
+    @Query('lotId') lotId?: string,
+    @Query('q') q?: string,
+    @Query('dueFrom') dueFrom?: string,
+    @Query('dueTo') dueTo?: string,
   ): Promise<CycleCountTaskResponse[]> {
     const parsedStatus = status && (CYCLE_COUNT_TASK_STATUSES as readonly string[]).includes(status) ? (status as CycleCountTaskStatus) : undefined;
+    const parsedAbc = abcClass && (ABC_CLASSES as readonly string[]).includes(abcClass) ? (abcClass as ABCClass) : undefined;
+    const parsedSource = source && (CYCLE_COUNT_SOURCES as readonly string[]).includes(source) ? (source as CycleCountSource) : undefined;
     const parsedOverdue = overdue === undefined ? undefined : overdue === 'true';
-    return this.service.listTasks(user.organizationId, user, { warehouseId, status: parsedStatus, overdue: parsedOverdue });
+    return this.service.listTasks(user.organizationId, user, {
+      warehouseId, status: parsedStatus, overdue: parsedOverdue, abcClass: parsedAbc,
+      source: parsedSource, assignedToId, lotId, q, dueFrom, dueTo,
+    });
   }
 
   @RequirePermissions(PERMISSIONS.CYCLE_COUNT_SCHEDULE)

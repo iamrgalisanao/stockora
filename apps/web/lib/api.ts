@@ -58,6 +58,12 @@ import type {
   WarehouseResponse,
   WarehouseLocationResponse,
   LocationUsage,
+  CycleCountMetrics,
+  CycleCountTaskResponse,
+  CycleCountCoverageRow,
+  CycleCountPolicyResponse,
+  ProductClassificationRow,
+  MembershipUserResponse,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -301,6 +307,44 @@ export const api = {
     post: (id: string) => request<CountResponse>(`/counts/${id}/post`, { method: 'POST' }),
     cancel: (id: string) => request<CountResponse>(`/counts/${id}/cancel`, { method: 'POST' }),
   },
+
+  cycleCount: {
+    metrics: (warehouseId?: string, from?: string, to?: string) => {
+      const p = new URLSearchParams();
+      if (warehouseId) p.set('warehouseId', warehouseId);
+      if (from) p.set('from', from);
+      if (to) p.set('to', to);
+      const qs = p.toString();
+      return request<CycleCountMetrics>(`/cycle-count/metrics${qs ? `?${qs}` : ''}`);
+    },
+    tasks: (filters: Record<string, string> = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+      const qs = p.toString();
+      return request<CycleCountTaskResponse[]>(`/cycle-count/tasks${qs ? `?${qs}` : ''}`);
+    },
+    task: (id: string) => request<CycleCountTaskResponse>(`/cycle-count/tasks/${id}`),
+    coverage: (warehouseId: string, dueOnly = false) =>
+      request<CycleCountCoverageRow[]>(`/cycle-count/coverage?warehouseId=${warehouseId}${dueOnly ? '&dueOnly=true' : ''}`),
+    policy: (warehouseId?: string) => request<CycleCountPolicyResponse>(`/cycle-count/policy${warehouseId ? `?warehouseId=${warehouseId}` : ''}`),
+    savePolicy: (body: Record<string, unknown>) =>
+      request<CycleCountPolicyResponse>('/cycle-count/policy', { method: 'PUT', body: JSON.stringify(body) }),
+    classify: (warehouseId: string, strategy?: string) =>
+      request<ProductClassificationRow[]>('/cycle-count/classify', { method: 'POST', body: JSON.stringify({ warehouseId, ...(strategy ? { strategy } : {}) }) }),
+    setClassification: (warehouseId: string, productId: string, abcClass: string, variantId?: string) =>
+      request<ProductClassificationRow>('/cycle-count/classification', { method: 'PUT', body: JSON.stringify({ warehouseId, productId, abcClass, ...(variantId ? { variantId } : {}) }) }),
+    generate: (warehouseId: string) =>
+      request<CycleCountTaskResponse[]>('/cycle-count/generate', { method: 'POST', body: JSON.stringify({ warehouseId }) }),
+    createAdHoc: (body: { warehouseId: string; productId: string; variantId?: string; lotId?: string }) =>
+      request<CycleCountTaskResponse>('/cycle-count/tasks', { method: 'POST', body: JSON.stringify(body) }),
+    assign: (id: string, assignedToId: string) =>
+      request<CycleCountTaskResponse>(`/cycle-count/tasks/${id}/assign`, { method: 'POST', body: JSON.stringify({ assignedToId }) }),
+    start: (id: string) => request<CycleCountTaskResponse>(`/cycle-count/tasks/${id}/start`, { method: 'POST' }),
+    cancel: (id: string) => request<CycleCountTaskResponse>(`/cycle-count/tasks/${id}/cancel`, { method: 'POST' }),
+    recount: (id: string) => request<CycleCountTaskResponse>(`/cycle-count/tasks/${id}/recount`, { method: 'POST' }),
+  },
+
+  members: () => request<MembershipUserResponse[]>('/users'),
 
   dashboard: () => request<DashboardSummary>('/dashboard/summary'),
   reorder: () => request<ReorderAssessment[]>('/reorder/recommendations'),
