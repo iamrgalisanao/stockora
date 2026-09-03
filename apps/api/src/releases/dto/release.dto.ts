@@ -16,6 +16,12 @@ import { RELEASE_DESTINATION_TYPES, type ReleaseDestinationType } from '@iw/cont
 
 const qty = { maxDecimalPlaces: 4 } as const;
 
+/** A lot allocation on a release line (ADR 0007) — for batch-tracked products, allocations sum to the line qty. */
+export class ReleaseAllocationInputDto {
+  @IsUUID() lotId!: string;
+  @IsNumber(qty) @IsPositive() quantity!: number;
+}
+
 export class ReleaseItemInputDto {
   @IsUUID() productId!: string;
   @IsOptional() @IsUUID() variantId?: string;
@@ -23,6 +29,9 @@ export class ReleaseItemInputDto {
   @IsOptional() @IsUUID() locationId?: string;
   /** When set, posting this line consumes the referenced reservation line (2B.1B). */
   @IsOptional() @IsUUID() reservationLineId?: string;
+  /** Lot allocations (batch-tracked products only); must sum to the released quantity. */
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ReleaseAllocationInputDto)
+  allocations?: ReleaseAllocationInputDto[];
   @IsOptional() @IsString() @MaxLength(500) remarks?: string;
 }
 

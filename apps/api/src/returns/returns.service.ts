@@ -153,6 +153,7 @@ export class ReturnsService {
               productId: l.productId,
               variantId: l.variantId,
               locationId: l.locationId,
+              lotId: l.lotId,
               quantity: new Prisma.Decimal(l.quantity),
             })),
           },
@@ -214,6 +215,7 @@ export class ReturnsService {
           variantId: r.line.variantId === NIL_UUID ? null : r.line.variantId,
           quantity: r.qty,
           locationId: r.line.locationId,
+          lotId: r.line.lotId, // intake lands in quarantine under the recognized lot (ADR 0007)
         })),
       },
     );
@@ -288,8 +290,8 @@ export class ReturnsService {
     try {
       await this.prisma.$transaction(async (tx) => {
         // Serialize concurrent dispositions on THIS line; read the durable remaining under the lock.
-        const rows = await tx.$queryRaw<Array<{ received: string; disposed: string; product_id: string; variant_id: string; location_id: string | null }>>`
-          SELECT received_quantity::text AS received, disposed_quantity::text AS disposed, product_id, variant_id, location_id
+        const rows = await tx.$queryRaw<Array<{ received: string; disposed: string; product_id: string; variant_id: string; location_id: string | null; lot_id: string | null }>>`
+          SELECT received_quantity::text AS received, disposed_quantity::text AS disposed, product_id, variant_id, location_id, lot_id
           FROM return_lines WHERE id = ${dto.lineId}::uuid FOR UPDATE`;
         const r = rows[0];
         if (!r) throw new BadRequestException('Line not found');
@@ -319,6 +321,7 @@ export class ReturnsService {
               variantId: r.variant_id === NIL_UUID ? null : r.variant_id,
               quantity: qty,
               locationId: r.location_id,
+              lotId: r.lot_id, // every disposition inherits the return line's lot (ADR 0007)
               deltas,
             },
           },
@@ -379,12 +382,12 @@ export class ReturnsService {
   private async resolveLine(
     organizationId: string,
     warehouseId: string,
-    line: { productId: string; variantId?: string; locationId?: string; quantity: number },
-  ): Promise<{ productId: string; variantId: string; locationId: string | null; quantity: number }> {
+    line: { productId: string; variantId?: string; locationId?: string; lotId?: string; quantity: number },
+  ): Promise<{ productId: string; variantId: string; locationId: string | null; lotId: string | null; quantity: number }> {
     // Invariant 10: only ACTIVE products/variants/locations can start a new return intake.
     const product = await this.prisma.product.findFirst({
       where: { id: line.productId, organizationId },
-      select: { status: true },
+      select: { status: true, isBatchTracked: true },
     });
     if (!product) throw new BadRequestException('Product not found');
     if (product.status !== 'ACTIVE') throw new BadRequestException('Cannot return a non-active product');
@@ -403,7 +406,23 @@ export class ReturnsService {
     if (line.locationId) {
       await this.warehouses.assertLocationSelectable(organizationId, warehouseId, line.locationId);
     }
-    return { productId: line.productId, variantId, locationId: line.locationId ?? null, quantity: line.quantity };
+
+    // Lot policy (ADR 0007 §8): a batch-tracked return requires a RECOGNIZED (existing) lot of this
+    // product/variant; a non-batch product must not carry one. Returns never create lots.
+    let lotId: string | null = null;
+    if (product.isBatchTracked) {
+      if (!line.lotId) throw new BadRequestException('This product is batch-tracked; a recognized lot is required to return it');
+      const lot = await this.prisma.inventoryLot.findFirst({
+        where: { id: line.lotId, organizationId, productId: line.productId, variantId },
+        select: { id: true },
+      });
+      if (!lot) throw new BadRequestException('Lot not found for this product/variant');
+      lotId = lot.id;
+    } else if (line.lotId) {
+      throw new BadRequestException('This product is not batch-tracked and cannot carry a lot');
+    }
+
+    return { productId: line.productId, variantId, locationId: line.locationId ?? null, lotId, quantity: line.quantity };
   }
 
   private async nextNumber(tx: Prisma.TransactionClient, organizationId: string): Promise<string> {

@@ -167,16 +167,18 @@ export class ReservationsService {
       // Deterministic lock order across all lines to avoid deadlocks on multi-line reservations.
       const ordered = [...existing.lines].sort((a, b) => `${a.productId}|${a.variantId}`.localeCompare(`${b.productId}|${b.variantId}`));
       for (const line of ordered) {
-        const bal = await this.lockBalance(tx, organizationId, line.productId, line.variantId, existing.warehouseId);
-        const available = bal.onHand.sub(bal.reserved).sub(bal.quarantined);
+        // Availability is the product/warehouse position aggregated across lots (batch stock lives on
+        // lot rows); the reserved commitment is written to the NIL row (ADR 0007 §7).
+        const agg = await this.lockGrainAggregate(tx, organizationId, line.productId, line.variantId, existing.warehouseId);
+        const available = agg.onHand.sub(agg.reserved).sub(agg.quarantined);
         if (D(line.quantity).gt(available)) {
           throw new BadRequestException(
             `Insufficient available stock for ${line.product.sku}: requested ${D(line.quantity).toString()}, available ${available.toString()}`,
           );
         }
         await tx.inventoryBalance.update({
-          where: { id: bal.id },
-          data: { reserved: bal.reserved.add(line.quantity), version: { increment: 1 } },
+          where: { id: agg.nilId },
+          data: { reserved: { increment: line.quantity }, version: { increment: 1 } },
         });
       }
       return tx.inventoryReservation.update({
@@ -418,6 +420,35 @@ export class ReservationsService {
       if (loc.status !== 'ACTIVE') throw new BadRequestException('Cannot reserve at a non-active location');
     }
     return { productId: line.productId, variantId, locationId: line.locationId ?? null, quantity: line.quantity };
+  }
+
+  /**
+   * Lock the whole product/warehouse position (all lot rows) FOR UPDATE and return the NIL-lot row id
+   * plus the aggregate buckets across lots (ADR 0007 §7). Reservations commit at the product level: for
+   * batch stock the physical on-hand lives on lot rows, so availability must aggregate across them, while
+   * the `reserved` commitment is written to the NIL row. For non-batch stock only the NIL row exists, so
+   * this reduces to the prior single-row behaviour.
+   */
+  private async lockGrainAggregate(
+    tx: Tx,
+    organizationId: string,
+    productId: string,
+    variantId: string,
+    warehouseId: string,
+  ): Promise<{ nilId: string; onHand: Prisma.Decimal; reserved: Prisma.Decimal; quarantined: Prisma.Decimal }> {
+    await tx.$executeRaw`
+      INSERT INTO inventory_balances (id, organization_id, product_id, variant_id, warehouse_id, lot_id, updated_at)
+      VALUES (gen_random_uuid(), ${organizationId}::uuid, ${productId}::uuid, ${variantId}::uuid, ${warehouseId}::uuid, ${NIL_UUID}::uuid, now())
+      ON CONFLICT (organization_id, product_id, variant_id, warehouse_id, lot_id) DO NOTHING`;
+    const rows = await tx.$queryRaw<Array<{ id: string; lot_id: string; on_hand: string; reserved: string; quarantined: string }>>`
+      SELECT id, lot_id::text AS lot_id, on_hand::text, reserved::text, quarantined::text
+      FROM inventory_balances
+      WHERE organization_id = ${organizationId}::uuid AND product_id = ${productId}::uuid
+        AND variant_id = ${variantId}::uuid AND warehouse_id = ${warehouseId}::uuid
+      FOR UPDATE`;
+    const nil = rows.find((r) => r.lot_id === NIL_UUID)!;
+    const sum = (k: 'on_hand' | 'reserved' | 'quarantined') => rows.reduce((a, r) => a.add(r[k]), new Prisma.Decimal(0));
+    return { nilId: nil.id, onHand: sum('on_hand'), reserved: sum('reserved'), quarantined: sum('quarantined') };
   }
 
   /** Insert-if-missing then SELECT … FOR UPDATE — the balance-locking pattern from the posting service. */

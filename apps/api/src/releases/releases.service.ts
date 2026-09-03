@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
-import { InventoryPostingService } from '../inventory/inventory-posting.service';
+import { InventoryPostingService, type StockLine } from '../inventory/inventory-posting.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { NIL_UUID } from '../inventory/inventory.constants';
 import {
@@ -19,7 +19,7 @@ import {
 type ReleaseWithItems = Prisma.StockReleaseGetPayload<{
   include: {
     warehouse: { select: { code: true } };
-    items: { include: { product: { select: { sku: true; name: true } } } };
+    items: { include: { product: { select: { sku: true; name: true; isBatchTracked: true } }; allocations: true } };
   };
 }>;
 
@@ -87,6 +87,9 @@ export class ReleasesService {
             locationId: i.locationId ?? null,
             reservationLineId: i.reservationLineId ?? null,
             remarks: i.remarks ?? null,
+            ...(i.allocations && i.allocations.length > 0
+              ? { allocations: { create: i.allocations.map((a) => ({ organizationId, lotId: a.lotId, quantity: a.quantity })) } }
+              : {}),
           })),
         },
       },
@@ -233,20 +236,44 @@ export class ReleasesService {
       }
     }
 
-    // A reserved line drops on_hand AND reserved atomically in one movement; an unreserved line
-    // uses the default SALES_RELEASE delta (on_hand only).
-    const lines = approved.map((i) => {
+    // Lot allocation policy (ADR 0007): a batch line must carry allocations summing to its approved
+    // quantity; a non-batch line must not. Allocations are the seam FEFO will later auto-generate.
+    const ZERO = new Prisma.Decimal(0);
+    for (const i of approved) {
       const q = new Prisma.Decimal(i.approvedQty);
-      return {
-        productId: i.productId,
-        variantId: i.variantId,
-        quantity: i.approvedQty,
-        locationId: i.locationId,
-        ...(i.reservationLineId
-          ? { deltas: { onHand: q.neg(), reserved: q.neg(), inTransit: new Prisma.Decimal(0), quarantined: new Prisma.Decimal(0), damaged: new Prisma.Decimal(0) } }
-          : {}),
-      };
-    });
+      const allocSum = i.allocations.reduce((a, al) => a.add(al.quantity), ZERO);
+      if (i.product.isBatchTracked) {
+        if (i.allocations.length === 0) throw new BadRequestException(`Line for ${i.product.sku} is batch-tracked and requires lot allocations`);
+        if (!allocSum.equals(q)) throw new BadRequestException(`Lot allocations for ${i.product.sku} must sum to the approved quantity`);
+      } else if (i.allocations.length > 0) {
+        throw new BadRequestException(`Line for ${i.product.sku} is not batch-tracked and cannot carry lot allocations`);
+      }
+    }
+
+    // Build posting lines. Non-batch: one SALES_RELEASE per item (on_hand −q, and reserved −q on the same
+    // NIL row when reservation-backed). Batch: one SALES_RELEASE per allocation (on_hand −q at the lot);
+    // the reservation's `reserved` bucket lives on the NIL row and is decremented directly below (ADR 0005
+    // — reservations are off-ledger, so the commitment accounting is not a physical movement).
+    const lines: StockLine[] = [];
+    for (const i of approved) {
+      const q = new Prisma.Decimal(i.approvedQty);
+      if (i.product.isBatchTracked) {
+        for (const al of i.allocations) {
+          const aq = new Prisma.Decimal(al.quantity);
+          lines.push({
+            productId: i.productId, variantId: i.variantId, quantity: al.quantity, locationId: i.locationId, lotId: al.lotId,
+            deltas: { onHand: aq.neg(), reserved: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO },
+          });
+        }
+      } else {
+        lines.push({
+          productId: i.productId, variantId: i.variantId, quantity: i.approvedQty, locationId: i.locationId,
+          ...(i.reservationLineId
+            ? { deltas: { onHand: q.neg(), reserved: q.neg(), inTransit: ZERO, quarantined: ZERO, damaged: ZERO } }
+            : {}),
+        });
+      }
+    }
 
     await this.posting.release(
       {
@@ -260,9 +287,19 @@ export class ReleasesService {
     const consumed = await this.prisma.$transaction(async (tx) => {
       const results: Array<{ reservationId: string; reservationNo: string; status: string }> = [];
       for (const item of release.items) {
+        const q = new Prisma.Decimal(item.approvedQty);
         await tx.stockReleaseItem.update({ where: { id: item.id }, data: { releasedQty: item.approvedQty } });
-        if (item.reservationLineId && new Prisma.Decimal(item.approvedQty).gt(0)) {
-          results.push(await this.reservations.recordConsumption(tx, item.reservationLineId, new Prisma.Decimal(item.approvedQty)));
+        if (item.reservationLineId && q.gt(0)) {
+          // A batch reservation's `reserved` sits on the NIL-lot row (the reservation was lot-agnostic);
+          // consuming it decrements that bucket directly, since the physical movement hit the lot rows.
+          if (item.product.isBatchTracked) {
+            await tx.$executeRaw`
+              UPDATE inventory_balances SET reserved = reserved - ${q}, version = version + 1
+              WHERE organization_id = ${organizationId}::uuid AND product_id = ${item.productId}::uuid
+                AND variant_id = ${item.variantId ?? NIL_UUID}::uuid AND warehouse_id = ${release.warehouseId}::uuid
+                AND lot_id = ${NIL_UUID}::uuid`;
+          }
+          results.push(await this.reservations.recordConsumption(tx, item.reservationLineId, q));
         }
       }
       await tx.stockRelease.update({
@@ -332,7 +369,7 @@ export class ReleasesService {
       where: { id, organizationId },
       include: {
         warehouse: { select: { code: true } },
-        items: { include: { product: { select: { sku: true, name: true } } } },
+        items: { include: { product: { select: { sku: true, name: true, isBatchTracked: true } }, allocations: true } },
       },
     });
     if (!release) throw new NotFoundException('Stock release not found');

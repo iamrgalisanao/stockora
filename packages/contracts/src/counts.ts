@@ -16,6 +16,7 @@ export interface CountItemResponse {
   productSku: string;
   productName: string;
   variantId: string | null;
+  lotId: string | null; // ADR 0007 — batch counts snapshot per lot
   systemQty?: string; // hidden while a blind count is still COUNTING
   countedQty: string | null;
   recountQty: string | null;

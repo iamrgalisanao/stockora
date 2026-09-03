@@ -215,12 +215,14 @@ export class AdjustmentsService {
     if (adj.status === AdjustmentStatus.POSTED) return this.toResponse(adj, user);
     this.assertStatus(adj, [AdjustmentStatus.APPROVED], 'posted');
 
+    // Lot flows through to the posting layer (ADR 0007), which enforces batch ⟺ lot and requires the lot
+    // to exist — adjustments never create lots (a positive adjustment must target an existing lot).
     const inLines = adj.items
       .filter((i) => i.direction === 'IN')
-      .map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, unitCost: i.unitCost, locationId: i.locationId }));
+      .map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, unitCost: i.unitCost, locationId: i.locationId, lotId: i.lotId }));
     const outLines = adj.items
       .filter((i) => i.direction === 'OUT')
-      .map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, locationId: i.locationId }));
+      .map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, locationId: i.locationId, lotId: i.lotId }));
 
     const base = idempotencyKey ?? `stock_adjustment:${adj.id}`;
     if (inLines.length > 0) {
@@ -308,6 +310,7 @@ export class AdjustmentsService {
       quantity: i.quantity,
       unitCost: i.unitCost ?? 0,
       locationId: i.locationId ?? null,
+      lotId: i.lotId ?? null,
       remarks: i.remarks ?? null,
     };
   }
