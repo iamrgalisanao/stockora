@@ -99,6 +99,25 @@ export class CycleCountController {
     return this.service.assign(user.organizationId, user, id, dto);
   }
 
+  // Starting a count session is execution → gated by inventory.count (same as the count engine itself).
+  @RequirePermissions(PERMISSIONS.INVENTORY_COUNT)
+  @Post('tasks/:id/start')
+  start(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<CycleCountTaskResponse> {
+    return this.service.startTask(user.organizationId, user, id);
+  }
+
+  @RequirePermissions(PERMISSIONS.CYCLE_COUNT_SCHEDULE)
+  @Post('tasks/:id/cancel')
+  cancel(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<CycleCountTaskResponse> {
+    return this.service.cancelTask(user.organizationId, user, id);
+  }
+
+  @RequirePermissions(PERMISSIONS.CYCLE_COUNT_SCHEDULE)
+  @Post('tasks/:id/recount')
+  recount(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<CycleCountTaskResponse> {
+    return this.service.recount(user.organizationId, user, id);
+  }
+
   @RequirePermissions(PERMISSIONS.CYCLE_COUNT_VIEW)
   @Get('tasks/:id')
   getTask(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<CycleCountTaskResponse> {
