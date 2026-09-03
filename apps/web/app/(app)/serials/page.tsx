@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   SERIAL_STATUSES,
   type SerialReconciliationResult,
@@ -125,7 +126,7 @@ export default function SerialsPage() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td style={{ fontFamily: 'monospace' }}>{r.serialNumber}</td>
+                  <td style={{ fontFamily: 'monospace' }}><Link href={`/serials/${r.id}`}>{r.serialNumber}</Link></td>
                   <td>{r.productSku} — {r.productName}</td>
                   <td>{STATUS_LABEL[r.status]}</td>
                   <td>{r.warehouseCode ?? '—'}</td>

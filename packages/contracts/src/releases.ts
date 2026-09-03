@@ -34,6 +34,7 @@ export interface ReleaseItemResponse {
   locationId: string | null;
   reservationLineId: string | null;
   remarks: string | null;
+  serialNumbers: string[];
 }
 
 export interface ReleaseResponse {

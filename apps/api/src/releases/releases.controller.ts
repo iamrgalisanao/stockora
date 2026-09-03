@@ -86,7 +86,7 @@ export class ReleasesController {
     @Body() dto: PostReleaseDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<ReleaseResponse> {
-    return this.releases.post(user.organizationId, user, id, idempotencyKey, dto?.fefoOverrideReason);
+    return this.releases.post(user.organizationId, user, id, idempotencyKey, dto?.fefoOverrideReason, dto?.serials);
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_RELEASE)

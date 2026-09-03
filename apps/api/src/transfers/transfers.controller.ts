@@ -12,7 +12,7 @@ import { PERMISSIONS, TransferListItem, TransferResponse } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { TransfersService } from './transfers.service';
-import { CreateTransferDto, RejectTransferDto, UpdateTransferDto } from './dto/transfer.dto';
+import { CreateTransferDto, DispatchTransferDto, RejectTransferDto, UpdateTransferDto } from './dto/transfer.dto';
 
 @Controller('transfers')
 export class TransfersController {
@@ -73,9 +73,10 @@ export class TransfersController {
   dispatch(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DispatchTransferDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<TransferResponse> {
-    return this.transfers.dispatch(user.organizationId, user, id, idempotencyKey);
+    return this.transfers.dispatch(user.organizationId, user, id, idempotencyKey, dto?.serials);
   }
 
   @RequirePermissions(PERMISSIONS.INVENTORY_TRANSFER)

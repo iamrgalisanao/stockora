@@ -324,10 +324,15 @@ export class SerialsService {
   // -------------------------------------------------------------------------
 
   async reconcile(organizationId: string, filter?: { productId?: string }): Promise<SerialReconciliationResult> {
-    const products = await this.prisma.product.findMany({
+    const candidates = await this.prisma.product.findMany({
       where: { organizationId, isSerialized: true, ...(filter?.productId ? { id: filter.productId } : {}) },
       select: { id: true, sku: true },
     });
+    // Only RECEIPT-capture products serial-track their in-stock units, so only they reconcile to the
+    // balance buckets (ADR 0012 §8). ISSUE-capture products serialize at issue, leaving in-stock quantity
+    // deliberately un-serialized — including them would report false drift.
+    const policyMap = await this.policyMapFor(organizationId, candidates.map((p) => p.id));
+    const products = candidates.filter((p) => (policyMap.get(p.id)?.captureMode ?? 'RECEIPT') === 'RECEIPT');
     if (products.length === 0) return { serialsChecked: 0, drift: [], ok: true };
     const productIds = products.map((p) => p.id);
     const skuOf = new Map(products.map((p) => [p.id, p.sku]));
@@ -359,15 +364,17 @@ export class SerialsService {
     const balanceQty = new Map<string, Prisma.Decimal>();
     for (const b of balances) {
       const base = `${b.productId}|${b.variantId}|${b.warehouseId}|${b.lotId}`;
+      // IN_STOCK maps to the non-quarantined physical portion of on-hand — quarantined stock is held WITHIN
+      // on_hand (ADR 0012 §8; `available = onHand − reserved − quarantined`), and a v1 reservation never
+      // moves a serial out of IN_STOCK, so reserved is NOT subtracted here. Damaged sits outside on_hand.
       for (const [bucket, val] of [
-        ['on_hand', b.onHand],
-        ['in_transit', b.inTransit],
-        ['quarantined', b.quarantined],
-        ['damaged', b.damaged],
+        ['on_hand', new Prisma.Decimal(b.onHand).sub(b.quarantined)],
+        ['in_transit', new Prisma.Decimal(b.inTransit)],
+        ['quarantined', new Prisma.Decimal(b.quarantined)],
+        ['damaged', new Prisma.Decimal(b.damaged)],
       ] as const) {
-        const d = new Prisma.Decimal(val);
-        if (d.isZero()) continue;
-        balanceQty.set(`${base}|${bucket}`, d);
+        if (val.isZero()) continue;
+        balanceQty.set(`${base}|${bucket}`, val);
       }
     }
 
@@ -389,6 +396,166 @@ export class SerialsService {
       }
     }
     return { serialsChecked, drift, ok: drift.length === 0 };
+  }
+
+  // -------------------------------------------------------------------------
+  // Propagation (ADR 0012 §9) — registry state rides each ledger movement. Every method runs inside the
+  // caller's posting transaction so serial state and the ledger commit atomically; validation happens up
+  // front so an invalid serial fails the workflow before stock changes.
+  // -------------------------------------------------------------------------
+
+  /** Normalize a serial set the same way capture-at-receipt does (trim, reject empty/dupes). */
+  normalize(raw: string[], productId: string): string[] {
+    const norm = (raw ?? []).map((s) => (s ?? '').trim());
+    if (norm.some((s) => s.length === 0)) {
+      throw new BadRequestException(`Product ${productId}: empty serial numbers are not allowed`);
+    }
+    if (new Set(norm).size !== norm.length) {
+      throw new BadRequestException(`Product ${productId}: duplicate serial numbers in the set`);
+    }
+    return norm;
+  }
+
+  /**
+   * Move a set of EXISTING serials from an allowed prior state to a new one, atomically with `movementId`.
+   * Validates existence, product/variant scope, current state, and (optionally) warehouse + lot, so a bad
+   * serial aborts before anything commits. Returns the affected rows.
+   */
+  async transitionExistingInTx(
+    tx: Tx,
+    organizationId: string,
+    opts: {
+      productId: string;
+      variantKey: string;
+      serialNumbers: string[];
+      expectFrom: SerialStatus[];
+      to: SerialStatus;
+      requireWarehouseId?: string | null;
+      requireLotId?: string | null;
+      setWarehouseId?: string | null;
+      setLocationId?: string | null;
+      setIssuedAt?: boolean;
+      movementId: string;
+    },
+  ): Promise<void> {
+    const numbers = this.normalize(opts.serialNumbers, opts.productId);
+    if (numbers.length === 0) return;
+    const rows = await tx.inventorySerial.findMany({
+      where: { organizationId, productId: opts.productId, variantId: opts.variantKey, serialNumber: { in: numbers } },
+    });
+    const byNumber = new Map(rows.map((r) => [r.serialNumber, r]));
+    for (const sn of numbers) {
+      const row = byNumber.get(sn);
+      if (!row) throw new BadRequestException(`Serial ${sn} is not registered for this product`);
+      if (!opts.expectFrom.includes(row.status)) {
+        throw new BadRequestException(`Serial ${sn} is ${row.status} and cannot transition to ${opts.to}`);
+      }
+      if (opts.requireWarehouseId != null && row.currentWarehouseId !== opts.requireWarehouseId) {
+        throw new BadRequestException(`Serial ${sn} is not located in the expected warehouse`);
+      }
+      if (opts.requireLotId != null && row.lotId !== opts.requireLotId) {
+        throw new BadRequestException(`Serial ${sn} does not belong to the allocated lot`);
+      }
+    }
+    await tx.inventorySerial.updateMany({
+      where: { organizationId, productId: opts.productId, variantId: opts.variantKey, serialNumber: { in: numbers } },
+      data: {
+        status: opts.to,
+        lastMovementId: opts.movementId,
+        ...(opts.setWarehouseId !== undefined ? { currentWarehouseId: opts.setWarehouseId } : {}),
+        ...(opts.setLocationId !== undefined ? { currentLocationId: opts.setLocationId } : {}),
+        ...(opts.setIssuedAt ? { issuedAt: new Date() } : {}),
+      },
+    });
+  }
+
+  /**
+   * Register brand-new serials (capture-at-issue, or a controlled positive adjustment). Validates the
+   * serials do not already exist for the product, then creates them in the target state.
+   */
+  async createSerialsInTx(
+    tx: Tx,
+    organizationId: string,
+    opts: {
+      productId: string;
+      variantKey: string;
+      lotId: string | null;
+      serialNumbers: string[];
+      status: SerialStatus;
+      warehouseId: string | null;
+      locationId?: string | null;
+      movementId: string;
+      received?: boolean; // set receivedAt (IN_STOCK registration)
+      issued?: boolean; // set issuedAt (capture-at-issue)
+    },
+  ): Promise<void> {
+    const numbers = this.normalize(opts.serialNumbers, opts.productId);
+    if (numbers.length === 0) return;
+    const clash = await tx.inventorySerial.findFirst({
+      where: { organizationId, productId: opts.productId, variantId: opts.variantKey, serialNumber: { in: numbers } },
+      select: { serialNumber: true },
+    });
+    if (clash) throw new BadRequestException(`Serial ${clash.serialNumber} is already registered for this product`);
+    const now = new Date();
+    await tx.inventorySerial.createMany({
+      data: numbers.map((serialNumber) => ({
+        organizationId,
+        productId: opts.productId,
+        variantId: opts.variantKey,
+        serialNumber,
+        lotId: opts.lotId,
+        status: opts.status,
+        currentWarehouseId: opts.warehouseId,
+        currentLocationId: opts.locationId ?? null,
+        lastMovementId: opts.movementId,
+        ...(opts.received ? { receivedAt: now } : {}),
+        ...(opts.issued ? { issuedAt: now } : {}),
+      })),
+    });
+  }
+
+  /**
+   * Resolve the capture policy + serialization flags for one product (used by the domains to decide whether
+   * a line needs serials and, if so, whether they are selected (RECEIPT) or created (ISSUE) at issue time).
+   */
+  async serialMetaFor(
+    organizationId: string,
+    productId: string,
+  ): Promise<{ isSerialized: boolean; isBatchTracked: boolean; captureMode: SerialCaptureMode; requireLotWhenBatchTracked: boolean }> {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, organizationId },
+      select: { isSerialized: true, isBatchTracked: true },
+    });
+    if (!product) throw new BadRequestException('Product not found');
+    const policy = (await this.policyMapFor(organizationId, [productId])).get(productId);
+    return {
+      isSerialized: product.isSerialized,
+      isBatchTracked: product.isBatchTracked,
+      captureMode: policy?.captureMode ?? 'RECEIPT',
+      requireLotWhenBatchTracked: policy?.requireLotWhenBatchTracked ?? true,
+    };
+  }
+
+  /** The current IN_STOCK serials for a scope (product/variant/warehouse[/lot]) — the count's expected set. */
+  async inStockSerials(
+    organizationId: string,
+    productId: string,
+    variantKey: string,
+    warehouseId: string,
+    lotId: string | null,
+  ): Promise<string[]> {
+    const rows = await this.prisma.inventorySerial.findMany({
+      where: {
+        organizationId,
+        productId,
+        variantId: variantKey,
+        currentWarehouseId: warehouseId,
+        status: SerialStatus.IN_STOCK,
+        ...(lotId ? { lotId } : {}),
+      },
+      select: { serialNumber: true },
+    });
+    return rows.map((r) => r.serialNumber);
   }
 
   // -------------------------------------------------------------------------

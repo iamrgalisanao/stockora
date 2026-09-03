@@ -24,6 +24,13 @@ export class AdjustmentItemInputDto {
   @IsOptional() @IsNumber(qty) @Min(0) unitCost?: number;
   @IsOptional() @IsUUID() locationId?: string;
   @IsOptional() @IsUUID() lotId?: string; // required for batch-tracked products (ADR 0007)
+  /**
+   * Serialized products (2D.3B, ADR 0012). OUT: the exact existing IN_STOCK serials to remove; IN: the new
+   * serials to register. Never an anonymous ±N for a serialized product.
+   */
+  @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true }) serialNumbers?: string[];
+  /** For a serialized OUT line: whether the removed units become DISPOSED (default) or DAMAGED. */
+  @IsOptional() @IsIn(['DISPOSED', 'DAMAGED']) serialDisposition?: 'DISPOSED' | 'DAMAGED';
   @IsOptional() @IsString() @MaxLength(500) remarks?: string;
 }
 
