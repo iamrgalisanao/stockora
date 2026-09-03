@@ -67,7 +67,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ 2D.1 — Events / Transactional Outbox complete.**
 - **2D.2 — Notifications** (outbox consumer → rule engine → scoped notifications → channels; [ADR 0011](docs/adr/0011-notifications.md)):
   - **2D.2A — Notification Core + In-App Inbox (Notification/NotificationRecipient; explicit org/warehouse-scoped routing rules; outbox NotificationConsumer with idempotent creation; personal inbox APIs + in-app inbox UI; no external channels):** ✅ [docs/PHASE-2D2A-NOTIFICATIONS-CORE.md](docs/PHASE-2D2A-NOTIFICATIONS-CORE.md)
-- **Next:** 2D.2B External Delivery Framework + Email (NotificationDelivery + dispatcher + preferences + first outbound channel).
+  - **2D.2B — External Delivery Framework + Email (strict-opt-in NotificationPreference; NotificationDelivery [unique per recipient+channel] + retrying/dead-lettering dispatcher; pluggable channel adapter with a console email transport; template renderer with deep links; admin delivery diagnostics):** ✅ [docs/PHASE-2D2B-EMAIL-DELIVERY.md](docs/PHASE-2D2B-EMAIL-DELIVERY.md)
+- **Next:** 2D.2C Notification UX + Webhook (notification center + unread badge, preferences UI, delivery-status visibility, webhook channel).
 - Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
