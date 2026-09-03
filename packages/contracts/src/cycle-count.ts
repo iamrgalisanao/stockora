@@ -77,6 +77,42 @@ export interface CycleCountCoverageRow {
   hasActiveTask: boolean;
 }
 
+/**
+ * Read-model KPIs for the cycle-count dashboard (2C.3C, ADR 0009 §10). Computed once on the backend so the
+ * UI never re-derives a formula. Coverage counts SCHEDULED work only (ad-hoc/recount excluded); accuracy and
+ * variance are computed from POSTED cycle counts only — metrics move only after posted reconciliation.
+ */
+export interface CycleCountMetrics {
+  periodFrom: string;
+  periodTo: string;
+  // Task counts (current, warehouse-scoped).
+  dueToday: number;
+  overdue: number;
+  assignedToMe: number;
+  inProgress: number;
+  completedThisPeriod: number;
+  // On-time coverage = completedOnTime / scheduledDueInPeriod (SCHEDULED only). null when denominator is 0.
+  onTimeCoveragePct: number | null;
+  scheduledDueInPeriod: number;
+  completedOnTime: number;
+  // Count accuracy = 1 - Σ|variance| / Σ expected, bounded 0–100. null when no posted cycle counts in period.
+  accuracyPct: number | null;
+  absoluteVarianceQty: string;
+  postedCountsInPeriod: number;
+  varianceValue?: string; // gated by cost.view
+}
+
+/** The class/policy context snapshotted onto a task at generation (ADR 0009 §9). Null for ad-hoc tasks. */
+export interface CycleCountPolicySnapshot {
+  strategy: ClassificationStrategy;
+  aFrequencyDays: number;
+  bFrequencyDays: number;
+  cFrequencyDays: number;
+  lookbackDays: number;
+  aPercent: number;
+  bPercent: number;
+}
+
 export interface CycleCountTaskResponse {
   id: string;
   warehouseId: string;
@@ -91,6 +127,7 @@ export interface CycleCountTaskResponse {
   priority: number;
   status: CycleCountTaskStatus;
   source: CycleCountSource;
+  policyContext: CycleCountPolicySnapshot | null;
   dueAt: string;
   overdue: boolean; // derived from dueAt vs business date, only while the task is still active
   assignedToId: string | null;

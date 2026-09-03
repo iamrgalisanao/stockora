@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ABCClass, ClassificationStrategy, CycleCountTaskStatus } from '@prisma/client';
+import { Prisma, ABCClass, ClassificationStrategy, CycleCountSource, CycleCountTaskStatus } from '@prisma/client';
+import { PERMISSIONS } from '@iw/contracts';
 import {
   ABC_PRIORITY,
   DEFAULT_CYCLE_COUNT_POLICY,
   type CycleCountCoverageRow,
+  type CycleCountMetrics,
   type CycleCountPolicyResponse,
   type CycleCountTaskResponse,
   type ProductClassificationRow,
@@ -21,9 +23,22 @@ import {
   CreateAdHocTaskDto,
   GenerateTasksDto,
   SetClassificationDto,
-  TaskQueryDto,
   UpsertCycleCountPolicyDto,
 } from './dto/cycle-count.dto';
+
+/** Worklist filter (2C.3C). GET query params are parsed in the controller into this shape. */
+export interface TaskFilter {
+  warehouseId?: string;
+  status?: CycleCountTaskStatus;
+  overdue?: boolean;
+  abcClass?: ABCClass;
+  source?: CycleCountSource;
+  assignedToId?: string;
+  lotId?: string;
+  q?: string;
+  dueFrom?: string;
+  dueTo?: string;
+}
 
 const ACTIVE_TASK_STATUSES: CycleCountTaskStatus[] = ['PENDING', 'ASSIGNED', 'IN_PROGRESS'];
 const DAY_MS = 86_400_000;
@@ -398,7 +413,7 @@ export class CycleCountService {
     return this.oneTask(organizationId, id);
   }
 
-  async listTasks(organizationId: string, user: RequestUser, query: TaskQueryDto): Promise<CycleCountTaskResponse[]> {
+  async listTasks(organizationId: string, user: RequestUser, query: TaskFilter): Promise<CycleCountTaskResponse[]> {
     const scope = user.warehouseScope;
     const where: Prisma.CycleCountTaskWhereInput = { organizationId };
     if (query.warehouseId) {
@@ -408,9 +423,20 @@ export class CycleCountService {
       where.warehouseId = { in: scope };
     }
     if (query.status) where.status = query.status;
+    if (query.abcClass) where.abcClass = query.abcClass;
+    if (query.source) where.source = query.source;
+    if (query.assignedToId) where.assignedToId = query.assignedToId;
+    if (query.lotId) where.lotId = query.lotId;
+    if (query.dueFrom || query.dueTo) {
+      where.dueAt = { ...(query.dueFrom ? { gte: new Date(query.dueFrom) } : {}), ...(query.dueTo ? { lte: new Date(query.dueTo) } : {}) };
+    }
     const tasks = await this.prisma.cycleCountTask.findMany({ where, orderBy: [{ status: 'asc' }, { priority: 'asc' }, { dueAt: 'asc' }] });
     let rows = await this.mapTasks(organizationId, tasks);
     if (query.overdue !== undefined) rows = rows.filter((r) => r.overdue === query.overdue);
+    if (query.q) {
+      const needle = query.q.toLowerCase();
+      rows = rows.filter((r) => r.productSku.toLowerCase().includes(needle) || r.productName.toLowerCase().includes(needle) || (r.lotNumber ?? '').toLowerCase().includes(needle));
+    }
     return rows;
   }
 
@@ -419,6 +445,90 @@ export class CycleCountService {
     if (!task) throw new NotFoundException('Cycle-count task not found');
     await this.warehouses.assertAccess(organizationId, user, task.warehouseId);
     return this.oneTask(organizationId, task.id);
+  }
+
+  // ---- Metrics (read model; formulas centralized here, never in the UI) ---
+
+  async metrics(
+    organizationId: string,
+    user: RequestUser,
+    opts: { warehouseId?: string; from?: string; to?: string },
+  ): Promise<CycleCountMetrics> {
+    const scope = user.warehouseScope;
+    if (opts.warehouseId) await this.warehouses.assertAccess(organizationId, user, opts.warehouseId);
+    const whClause = opts.warehouseId ? opts.warehouseId : scope !== null ? { in: scope } : undefined;
+    const whWhere = whClause ? { warehouseId: whClause } : {};
+
+    const now = new Date();
+    const to = opts.to ? new Date(opts.to) : now;
+    const from = opts.from ? new Date(opts.from) : new Date(now.getTime() - 30 * DAY_MS);
+    const today = businessToday();
+
+    // Current active-task counts.
+    const active = await this.prisma.cycleCountTask.findMany({
+      where: { organizationId, ...whWhere, status: { in: ACTIVE_TASK_STATUSES } },
+      select: { status: true, dueAt: true, assignedToId: true },
+    });
+    let dueToday = 0, overdue = 0, assignedToMe = 0, inProgress = 0;
+    for (const t of active) {
+      const d = toBusinessDate(t.dueAt);
+      if (d < today) overdue++;
+      else if (d === today) dueToday++;
+      if (t.status === 'IN_PROGRESS') inProgress++;
+      if (t.assignedToId === user.userId) assignedToMe++;
+    }
+
+    const completedThisPeriod = await this.prisma.cycleCountTask.count({
+      where: { organizationId, ...whWhere, status: 'COMPLETED', completedAt: { gte: from, lte: to } },
+    });
+
+    // On-time coverage over SCHEDULED work only (ad-hoc/recount excluded, ADR 0009 §10).
+    const scheduledDue = await this.prisma.cycleCountTask.findMany({
+      where: { organizationId, ...whWhere, source: 'SCHEDULED', dueAt: { gte: from, lte: to } },
+      select: { status: true, dueAt: true, completedAt: true },
+    });
+    const scheduledDueInPeriod = scheduledDue.length;
+    const completedOnTime = scheduledDue.filter(
+      (t) => t.status === 'COMPLETED' && t.completedAt && toBusinessDate(t.completedAt) <= toBusinessDate(t.dueAt),
+    ).length;
+    const onTimeCoveragePct = scheduledDueInPeriod === 0 ? null : Math.round((completedOnTime / scheduledDueInPeriod) * 100);
+
+    // Accuracy + variance from POSTED cycle counts only — metrics move only after posted reconciliation.
+    const counts = await this.prisma.stockCount.findMany({
+      where: { organizationId, ...whWhere, type: 'CYCLE', status: 'POSTED', cycleCountTaskId: { not: null }, postedAt: { gte: from, lte: to } },
+      select: { items: { select: { systemQty: true, countedQty: true, unitCost: true } } },
+    });
+    let sumExpected = new Prisma.Decimal(0);
+    let sumAbs = new Prisma.Decimal(0);
+    let sumVarVal = new Prisma.Decimal(0);
+    for (const c of counts) {
+      for (const it of c.items) {
+        const counted = it.countedQty ?? it.systemQty;
+        const variance = new Prisma.Decimal(counted).sub(it.systemQty);
+        sumExpected = sumExpected.add(it.systemQty);
+        sumAbs = sumAbs.add(variance.abs());
+        sumVarVal = sumVarVal.add(variance.mul(it.unitCost));
+      }
+    }
+    const accuracyPct = counts.length === 0 ? null : CycleCountService.accuracyPct(sumExpected, sumAbs);
+
+    const res: CycleCountMetrics = {
+      periodFrom: from.toISOString(), periodTo: to.toISOString(),
+      dueToday, overdue, assignedToMe, inProgress, completedThisPeriod,
+      onTimeCoveragePct, scheduledDueInPeriod, completedOnTime,
+      accuracyPct, absoluteVarianceQty: sumAbs.toString(), postedCountsInPeriod: counts.length,
+    };
+    if (user.permissions.includes(PERMISSIONS.COST_VIEW)) res.varianceValue = sumVarVal.toDecimalPlaces(4).toString();
+    return res;
+  }
+
+  /** Centralized accuracy formula (ADR 0009 §10): 1 − Σ|variance| / Σexpected, bounded 0–100 %; with the
+   * explicit zero-expected rule (all-zero expected ⇒ 100 % if nothing counted, else 0 %). */
+  static accuracyPct(sumExpected: Prisma.Decimal, sumAbsVariance: Prisma.Decimal): number {
+    if (sumExpected.isZero()) return sumAbsVariance.isZero() ? 100 : 0;
+    const acc = new Prisma.Decimal(1).sub(sumAbsVariance.div(sumExpected));
+    const bounded = Prisma.Decimal.max(new Prisma.Decimal(0), Prisma.Decimal.min(new Prisma.Decimal(1), acc));
+    return Math.round(bounded.mul(100).toNumber());
   }
 
   // ---- Execution (delegates to the Physical Count engine) -----------------
@@ -539,8 +649,9 @@ export class CycleCountService {
     organizationId: string,
     tasks: Array<{
       id: string; warehouseId: string; productId: string; variantId: string; lotId: string; abcClass: ABCClass;
-      priority: number; status: CycleCountTaskStatus; source: string; dueAt: Date; assignedToId: string | null;
-      physicalCountId: string | null; supersedesTaskId: string | null; completedAt: Date | null; createdAt: Date;
+      priority: number; status: CycleCountTaskStatus; source: string; policyContext: Prisma.JsonValue; dueAt: Date;
+      assignedToId: string | null; physicalCountId: string | null; supersedesTaskId: string | null;
+      completedAt: Date | null; createdAt: Date;
     }>,
   ): Promise<CycleCountTaskResponse[]> {
     if (tasks.length === 0) return [];
@@ -577,6 +688,7 @@ export class CycleCountService {
         priority: t.priority,
         status: t.status,
         source: t.source as CycleCountTaskResponse['source'],
+        policyContext: (t.policyContext as CycleCountTaskResponse['policyContext']) ?? null,
         dueAt: t.dueAt.toISOString(),
         overdue: active && toBusinessDate(t.dueAt) < today,
         assignedToId: t.assignedToId,
