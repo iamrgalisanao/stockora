@@ -53,7 +53,9 @@ timestamp; balances are *derived* from the ledger, never edited in place.
   - **2C.2B — FEFO Allocation (deterministic FEFO allocator + advisory preview; release auto-generates or revalidates plans under lock; stale-plan conflict; audited fefo_override for non-FEFO manual selection):** ✅ [docs/PHASE-2C2B-FEFO-ALLOCATION.md](docs/PHASE-2C2B-FEFO-ALLOCATION.md)
   - **2C.2C — Expiry UX + Alerts Foundation (expiry dashboard + badges + FEFO preview UX; idempotent LotExpiryFact detection, no notification coupling):** ✅ [docs/PHASE-2C2C-EXPIRY-UX.md](docs/PHASE-2C2C-EXPIRY-UX.md)
 - **✅ 2C.2 — Expiry + FEFO complete.**
-- **Next:** 2C.3 Cycle Counting (scheduling / ABC over the lot-aware count engine).
+- **2C.3 — Cycle Counting** (scheduling / ABC planning over the lot-aware Physical Count engine; [ADR 0009](docs/adr/0009-cycle-counting.md)):
+  - **2C.3A — ABC + Scheduling Core (ABCClass planning attribute; org/warehouse CycleCountPolicy; MANUAL + MOVEMENT_VELOCITY classification with configurable thresholds; coverage read model + business-date due calc; idempotent CycleCountTask generation with one-active-task-per-scope; history-preserving snapshots; basic assignment):** ✅ [docs/PHASE-2C3A-ABC-SCHEDULING.md](docs/PHASE-2C3A-ABC-SCHEDULING.md)
+- **Next:** 2C.3B Count Session Integration (start task → StockCount(type=CYCLE) → reconcile → complete).
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
 Receiving flow (create a goods receipt → post to the ledger → stock appears).
