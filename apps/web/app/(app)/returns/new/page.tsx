@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { ProductResponse, ReturnType, WarehouseResponse } from '@iw/contracts';
 import { RETURN_TYPES } from '@iw/contracts';
 import { api } from '../../../../lib/api';
 import { LotPicker } from '../../../../components/LotPicker';
+import { SerialPicker } from '../../../../components/SerialPicker';
 
-interface DraftLine { productId: string; quantity: string; lotId: string }
+interface DraftLine { productId: string; quantity: string; lotId: string; serials: string[] }
 
 export default function NewReturnPage() {
   const router = useRouter();
@@ -19,7 +20,7 @@ export default function NewReturnPage() {
   const [sourceReference, setSourceReference] = useState('');
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: '', lotId: '' }]);
+  const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: '', lotId: '', serials: [] }]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -29,9 +30,10 @@ export default function NewReturnPage() {
   }, []);
 
   const isBatch = (productId: string) => products.find((p) => p.id === productId)?.isBatchTracked ?? false;
+  const isSerial = (productId: string) => products.find((p) => p.id === productId)?.isSerialized ?? false;
   const setLine = (i: number, patch: Partial<DraftLine>) =>
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  const addLine = () => setLines((ls) => [...ls, { productId: '', quantity: '', lotId: '' }]);
+  const addLine = () => setLines((ls) => [...ls, { productId: '', quantity: '', lotId: '', serials: [] }]);
   const removeLine = (i: number) => setLines((ls) => (ls.length === 1 ? ls : ls.filter((_, idx) => idx !== i)));
 
   async function submit(receiveNow: boolean) {
@@ -41,7 +43,11 @@ export default function NewReturnPage() {
     if (chosen.length === 0) return setError('Add at least one line with a product and quantity.');
     // Batch-tracked products must reference a recognized lot (selected, not typed).
     if (chosen.some((l) => isBatch(l.productId) && !l.lotId)) return setError('Select a lot for each batch-tracked line.');
-    const payloadLines = chosen.map((l) => ({ productId: l.productId, quantity: Number(l.quantity), ...(l.lotId ? { lotId: l.lotId } : {}) }));
+    // Serialized products must have exactly `quantity` previously-issued serials scanned.
+    if (chosen.some((l) => isSerial(l.productId) && l.serials.length !== Number(l.quantity))) {
+      return setError('Scan the exact returned serial for each serialized line.');
+    }
+    const payloadLines = chosen.map((l) => ({ productId: l.productId, quantity: Number(l.quantity), ...(l.lotId ? { lotId: l.lotId } : {}), ...(l.serials.length ? { serialNumbers: l.serials } : {}) }));
     setSaving(true);
     try {
       const created = await api.returns.create({
@@ -97,21 +103,34 @@ export default function NewReturnPage() {
           <thead><tr><th>Product</th><th style={{ width: 280 }}>Lot</th><th className="num" style={{ width: 140 }}>Quantity</th><th style={{ width: 60 }} /></tr></thead>
           <tbody>
             {lines.map((l, i) => (
-              <tr key={i}>
-                <td>
-                  <select value={l.productId} onChange={(e) => setLine(i, { productId: e.target.value, lotId: '' })}>
-                    <option value="">Select product…</option>
-                    {products.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
-                  </select>
-                </td>
-                <td>
-                  {isBatch(l.productId)
-                    ? <LotPicker productId={l.productId} warehouseId={warehouseId} value={l.lotId} onChange={(lotId) => setLine(i, { lotId })} />
-                    : <span className="muted">—</span>}
-                </td>
-                <td className="num"><input type="number" min="0" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} /></td>
-                <td><button type="button" className="btn secondary" onClick={() => removeLine(i)} disabled={lines.length === 1}>✕</button></td>
-              </tr>
+              <React.Fragment key={i}>
+                <tr>
+                  <td>
+                    <select value={l.productId} onChange={(e) => setLine(i, { productId: e.target.value, lotId: '', serials: [] })}>
+                      <option value="">Select product…</option>
+                      {products.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    {isBatch(l.productId)
+                      ? <LotPicker productId={l.productId} warehouseId={warehouseId} value={l.lotId} onChange={(lotId) => setLine(i, { lotId })} />
+                      : <span className="muted">—</span>}
+                  </td>
+                  <td className="num"><input type="number" min="0" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} /></td>
+                  <td><button type="button" className="btn secondary" onClick={() => removeLine(i)} disabled={lines.length === 1}>✕</button></td>
+                </tr>
+                {isSerial(l.productId) && Number(l.quantity) > 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ background: 'var(--surface-2,#fafafa)' }}>
+                      <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Scan the returned serial(s) — each must be a previously ISSUED unit of this product.</div>
+                      <SerialPicker
+                        mode="select" status="ISSUED" productId={l.productId} warehouseId=""
+                        requiredCount={Number(l.quantity)} value={l.serials} onChange={(serials) => setLine(i, { serials })}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

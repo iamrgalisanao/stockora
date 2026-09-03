@@ -3,6 +3,9 @@ import { Prisma, SerialStatus, SerialCaptureMode as PrismaSerialCaptureMode } fr
 import type { InventoryMovement } from '@prisma/client';
 import type {
   SerialCaptureMode,
+  SerialEventType,
+  SerialHistoryEvent,
+  SerialHistoryResponse,
   SerialReconciliationResult,
   SerialReconciliationRow,
   SerialResponse,
@@ -279,11 +282,14 @@ export class SerialsService {
       lotId?: string;
       serialNumber?: string;
       q?: string;
+      inInventory?: boolean;
     },
   ): Promise<SerialResponse[]> {
     const where: Prisma.InventorySerialWhereInput = { organizationId };
     if (filter.productId) where.productId = filter.productId;
     if (filter.status) where.status = filter.status as SerialStatus;
+    // "Currently in inventory" — physically present states (excludes ISSUED/DISPOSED).
+    else if (filter.inInventory) where.status = { in: [SerialStatus.IN_STOCK, SerialStatus.RESERVED, SerialStatus.IN_TRANSIT, SerialStatus.QUARANTINED, SerialStatus.DAMAGED] };
     if (filter.lotId) where.lotId = filter.lotId;
     if (filter.serialNumber) where.serialNumber = filter.serialNumber;
     else if (filter.q) where.serialNumber = { contains: filter.q, mode: 'insensitive' };
@@ -317,6 +323,92 @@ export class SerialsService {
     }
     const [res] = await this.decorate(organizationId, [row]);
     return res!;
+  }
+
+  /**
+   * The full movement history of one serial (2D.3C), reconstructed from the document items that carry it
+   * (each stores the serial in its `serialNumbers`/`observedSerials`), resolved to the originating document
+   * and ordered by time. The registry keeps only the LAST movement, so the timeline is assembled from the
+   * documents themselves — every event links back to its receipt/release/transfer/return/adjustment/count.
+   */
+  async history(organizationId: string, user: RequestUser, id: string): Promise<SerialHistoryResponse> {
+    const serial = await this.get(organizationId, user, id); // enforces org + warehouse scope
+    const sn = serial.serialNumber;
+    const productId = serial.productId;
+    const nullableVariant = serial.variantId; // null for base
+    const nilVariant = serial.variantId ?? NIL_UUID;
+    const events: SerialHistoryEvent[] = [];
+    const push = (
+      type: SerialEventType,
+      at: Date | null,
+      documentType: SerialHistoryEvent['documentType'],
+      documentId: string,
+      documentNumber: string | null,
+      warehouseId: string | null,
+      detail: string | null = null,
+    ) => { if (at) events.push({ type, at: at.toISOString(), documentType, documentId, documentNumber, warehouseId, detail }); };
+
+    // RECEIVED — posted goods receipts whose line captured this serial.
+    const receiptItems = await this.prisma.goodsReceiptItem.findMany({
+      where: { organizationId, productId, variantId: nullableVariant, serialNumbers: { has: sn }, receipt: { postedAt: { not: null } } },
+      include: { receipt: { select: { id: true, receiptNumber: true, postedAt: true, warehouseId: true } } },
+    });
+    for (const r of receiptItems) push('RECEIVED', r.receipt.postedAt, 'goods_receipt', r.receipt.id, r.receipt.receiptNumber, r.receipt.warehouseId);
+
+    // ISSUED — posted releases.
+    const releaseItems = await this.prisma.stockReleaseItem.findMany({
+      where: { organizationId, productId, variantId: nullableVariant, serialNumbers: { has: sn }, release: { postedAt: { not: null } } },
+      include: { release: { select: { id: true, releaseNumber: true, postedAt: true, warehouseId: true } } },
+    });
+    for (const r of releaseItems) push('ISSUED', r.release.postedAt, 'stock_release', r.release.id, r.release.releaseNumber, r.release.warehouseId);
+
+    // TRANSFERRED_OUT / TRANSFERRED_IN — dispatched/received transfers.
+    const transferItems = await this.prisma.stockTransferItem.findMany({
+      where: { organizationId, productId, variantId: nullableVariant, serialNumbers: { has: sn } },
+      include: { transfer: { select: { id: true, transferNumber: true, dispatchedAt: true, receivedAt: true, sourceWarehouseId: true, destWarehouseId: true } } },
+    });
+    for (const t of transferItems) {
+      push('TRANSFERRED_OUT', t.transfer.dispatchedAt, 'stock_transfer', t.transfer.id, t.transfer.transferNumber, t.transfer.sourceWarehouseId);
+      push('TRANSFERRED_IN', t.transfer.receivedAt, 'stock_transfer', t.transfer.id, t.transfer.transferNumber, t.transfer.destWarehouseId);
+    }
+
+    // RETURNED — received returns whose line carried this serial.
+    const returnLines = await this.prisma.returnLine.findMany({
+      where: { productId, variantId: nilVariant, serialNumbers: { has: sn }, return: { organizationId, receivedAt: { not: null } } },
+      include: { return: { select: { id: true, returnNo: true, receivedAt: true, warehouseId: true } }, dispositions: { where: { serialNumbers: { has: sn } } } },
+    });
+    for (const l of returnLines) {
+      push('RETURNED', l.return.receivedAt, 'inventory_return', l.return.id, l.return.returnNo, l.return.warehouseId);
+      for (const d of l.dispositions) {
+        const type = d.type === 'RESTOCK' ? 'RESTOCKED' : d.type === 'DAMAGED' ? 'DAMAGED' : 'DISPOSED';
+        push(type, d.performedAt, 'inventory_return', l.return.id, l.return.returnNo, l.return.warehouseId, d.type);
+      }
+    }
+
+    // ADJUSTED_IN / ADJUSTED_OUT — posted adjustments.
+    const adjItems = await this.prisma.stockAdjustmentItem.findMany({
+      where: { organizationId, productId, variantId: nullableVariant, serialNumbers: { has: sn }, adjustment: { status: 'POSTED' } },
+      include: { adjustment: { select: { id: true, adjustmentNumber: true, postedAt: true, warehouseId: true } } },
+    });
+    for (const a of adjItems) {
+      push(a.direction === 'IN' ? 'ADJUSTED_IN' : 'ADJUSTED_OUT', a.adjustment.postedAt, 'stock_adjustment', a.adjustment.id, a.adjustment.adjustmentNumber, a.adjustment.warehouseId, a.serialDisposition);
+    }
+
+    // COUNT_FOUND / COUNT_LOST — posted counts where this serial was observed-but-not-expected (found) or
+    // expected-but-not-observed (lost).
+    const countItems = await this.prisma.stockCountItem.findMany({
+      where: { organizationId, productId, variantId: nullableVariant, count: { status: 'POSTED' }, OR: [{ observedSerials: { has: sn } }, { expectedSerials: { has: sn } }] },
+      include: { count: { select: { id: true, countNumber: true, postedAt: true, warehouseId: true } } },
+    });
+    for (const c of countItems) {
+      const observed = c.observedSerials.includes(sn);
+      const expected = c.expectedSerials.includes(sn);
+      if (observed && !expected) push('COUNT_FOUND', c.count.postedAt, 'stock_count', c.count.id, c.count.countNumber, c.count.warehouseId);
+      else if (expected && !observed) push('COUNT_LOST', c.count.postedAt, 'stock_count', c.count.id, c.count.countNumber, c.count.warehouseId);
+    }
+
+    events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+    return { serial, events };
   }
 
   // -------------------------------------------------------------------------

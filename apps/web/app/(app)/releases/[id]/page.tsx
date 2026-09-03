@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import type { AuthenticatedUser, ReleaseResponse } from '@iw/contracts';
+import type { AuthenticatedUser, ProductResponse, ReleaseResponse, SerialCaptureMode } from '@iw/contracts';
 import { api } from '../../../../lib/api';
 import { statusClass } from '../../../../lib/status';
+import { SerialPicker } from '../../../../components/SerialPicker';
 
 export default function ReleaseDetailPage() {
   const params = useParams<{ id: string }>();
@@ -12,30 +13,38 @@ export default function ReleaseDetailPage() {
   const router = useRouter();
   const [release, setRelease] = useState<ReleaseResponse | null>(null);
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
+  const [products, setProducts] = useState<Map<string, ProductResponse>>(new Map());
+  const [captureMode, setCaptureMode] = useState<Map<string, SerialCaptureMode>>(new Map());
+  const [serialSel, setSerialSel] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    Promise.all([api.releases.get(id), api.me()])
-      .then(([r, u]) => {
+    Promise.all([api.releases.get(id), api.me(), api.products()])
+      .then(async ([r, u, ps]) => {
         setRelease(r);
         setUser(u);
+        setProducts(new Map(ps.map((p) => [p.id, p])));
+        // Capture mode per serialized product decides select (RECEIPT) vs capture-new (ISSUE).
+        const serializedIds = [...new Set(r.items.map((i) => i.productId).filter((pid) => ps.find((p) => p.id === pid)?.isSerialized))];
+        const modes = await Promise.all(serializedIds.map((pid) => api.serials.policy(pid).then((pol) => [pid, pol.captureMode] as const).catch(() => [pid, 'RECEIPT' as SerialCaptureMode] as const)));
+        setCaptureMode(new Map(modes));
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
   }, [id]);
 
   useEffect(load, [load]);
 
+  const serialItems = useMemo(
+    () => (release?.items ?? []).filter((i) => products.get(i.productId)?.isSerialized && Number(i.approvedQty) > 0),
+    [release, products],
+  );
+  const serialsSatisfied = serialItems.every((i) => (serialSel[i.id]?.length ?? 0) === Number(i.approvedQty));
+
   async function act(fn: () => Promise<ReleaseResponse>) {
     setBusy(true);
     setError(null);
-    try {
-      setRelease(await fn());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed');
-    } finally {
-      setBusy(false);
-    }
+    try { setRelease(await fn()); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); } finally { setBusy(false); }
   }
 
   // Posting a batch release surfaces two FEFO paths explicitly (ADR 0008): a non-FEFO lot selection needs
@@ -43,8 +52,9 @@ export default function ReleaseDetailPage() {
   async function postRelease(reason?: string) {
     setBusy(true);
     setError(null);
+    const serials = serialItems.map((i) => ({ itemId: i.id, serialNumbers: serialSel[i.id] ?? [] }));
     try {
-      setRelease(await api.releases.post(id, reason));
+      setRelease(await api.releases.post(id, reason, serials));
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Action failed';
       if (/reason is required to override FEFO/i.test(msg)) {
@@ -98,7 +108,7 @@ export default function ReleaseDetailPage() {
               {release.items.map((i) => (
                 <tr key={i.id}>
                   <td>{i.productSku}</td>
-                  <td>{i.productName}</td>
+                  <td>{i.productName}{i.serialNumbers.length > 0 ? <span className="muted" style={{ fontSize: 11 }}> · {i.serialNumbers.join(', ')}</span> : null}</td>
                   <td className="num">{i.requestedQty}</td>
                   <td className="num">{i.approvedQty}</td>
                   <td className="num">{i.releasedQty}</td>
@@ -107,6 +117,31 @@ export default function ReleaseDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Serial selection / capture at post (2D.3C) */}
+        {s === 'APPROVED' && canRelease && serialItems.length > 0 && (
+          <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+            {serialItems.map((i) => {
+              const mode: SerialCaptureMode = captureMode.get(i.productId) ?? 'RECEIPT';
+              return (
+                <div key={i.id}>
+                  <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
+                    {i.productSku} — {mode === 'ISSUE' ? 'capture new serials at issue' : 'select serials to issue'}
+                  </div>
+                  <SerialPicker
+                    mode={mode === 'ISSUE' ? 'capture' : 'select'}
+                    productId={i.productId}
+                    variantId={i.variantId}
+                    warehouseId={release.warehouseId}
+                    requiredCount={Number(i.approvedQty)}
+                    value={serialSel[i.id] ?? []}
+                    onChange={(v) => setSerialSel((prev) => ({ ...prev, [i.id]: v }))}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {error && <div className="error">{error}</div>}
 
@@ -117,23 +152,14 @@ export default function ReleaseDetailPage() {
           {s === 'FOR_APPROVAL' && canApprove && (
             <>
               <button className="btn" disabled={busy} onClick={() => act(() => api.releases.approve(id))}>Approve</button>
-              <button
-                className="btn secondary"
-                disabled={busy}
-                onClick={() => {
-                  const reason = window.prompt('Reason for rejection?') ?? '';
-                  if (reason) act(() => api.releases.reject(id, reason));
-                }}
-              >
-                Reject
-              </button>
+              <button className="btn secondary" disabled={busy} onClick={() => { const reason = window.prompt('Reason for rejection?') ?? ''; if (reason) act(() => api.releases.reject(id, reason)); }}>Reject</button>
             </>
           )}
-          {s === 'FOR_APPROVAL' && !canApprove && (
-            <span className="muted">Awaiting approval by an authorized approver.</span>
-          )}
+          {s === 'FOR_APPROVAL' && !canApprove && (<span className="muted">Awaiting approval by an authorized approver.</span>)}
           {s === 'APPROVED' && canRelease && (
-            <button className="btn" disabled={busy} onClick={() => postRelease()}>Release to stock</button>
+            <button className="btn" disabled={busy || !serialsSatisfied} onClick={() => postRelease()}>
+              Release to stock{serialItems.length > 0 && !serialsSatisfied ? ' (select serials first)' : ''}
+            </button>
           )}
           {['DRAFT', 'FOR_APPROVAL', 'APPROVED'].includes(s) && canRelease && (
             <button className="btn secondary" disabled={busy} onClick={() => act(() => api.releases.cancel(id))}>Cancel</button>

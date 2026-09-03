@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   SERIAL_STATUSES,
+  type ProductResponse,
   type SerialReconciliationResult,
   type SerialResponse,
   type SerialStatus,
@@ -23,8 +24,11 @@ const STATUS_LABEL: Record<SerialStatus, string> = {
 
 export default function SerialsPage() {
   const [warehouses, setWarehouses] = useState<WarehouseResponse[]>([]);
+  const [products, setProducts] = useState<ProductResponse[]>([]);
   const [warehouseId, setWarehouseId] = useState('');
+  const [productId, setProductId] = useState('');
   const [status, setStatus] = useState<SerialStatus | ''>('');
+  const [inInventory, setInInventory] = useState(false);
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<SerialResponse[]>([]);
   const [recon, setRecon] = useState<SerialReconciliationResult | null>(null);
@@ -32,19 +36,20 @@ export default function SerialsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { api.warehouses().then(setWarehouses).catch(() => {}); }, []);
+  useEffect(() => { api.products().then((p) => setProducts(p.filter((x) => x.isSerialized))).catch(() => {}); }, []);
   useEffect(() => { api.serials.reconcile().then(setRecon).catch(() => setRecon(null)); }, []);
 
   useEffect(() => {
     setLoading(true);
     const t = setTimeout(() => {
       api.serials
-        .list({ warehouseId: warehouseId || undefined, status: status || undefined, q: q.trim() || undefined })
+        .list({ warehouseId: warehouseId || undefined, productId: productId || undefined, status: status || undefined, inInventory: inInventory || undefined, q: q.trim() || undefined })
         .then(setRows)
         .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
         .finally(() => setLoading(false));
     }, 180);
     return () => clearTimeout(t);
-  }, [warehouseId, status, q]);
+  }, [warehouseId, productId, status, inInventory, q]);
 
   const whCode = useMemo(() => new Map(warehouses.map((w) => [w.id, w.code])), [warehouses]);
 
@@ -86,7 +91,14 @@ export default function SerialsPage() {
       )}
 
       <div className="card" style={{ marginBottom: 12 }}>
-        <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr 2fr', gap: 10, alignItems: 'end' }}>
+        <div className="field-row" style={{ gridTemplateColumns: '1fr 1fr 1fr 1.5fr', gap: 10, alignItems: 'end' }}>
+          <div>
+            <label>Product</label>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)}>
+              <option value="">All serialized</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
+            </select>
+          </div>
           <div>
             <label>Warehouse</label>
             <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
@@ -106,6 +118,10 @@ export default function SerialsPage() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search serial…" />
           </div>
         </div>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 13 }}>
+          <input type="checkbox" checked={inInventory} onChange={(e) => setInInventory(e.target.checked)} disabled={!!status} />
+          Currently in inventory only
+        </label>
       </div>
 
       {error && <div className="error">{error}</div>}

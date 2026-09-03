@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import type { AuthenticatedUser, TransferResponse } from '@iw/contracts';
+import type { AuthenticatedUser, ProductResponse, TransferResponse } from '@iw/contracts';
 import { api } from '../../../../lib/api';
 import { statusClass } from '../../../../lib/status';
+import { SerialPicker } from '../../../../components/SerialPicker';
 
 export default function TransferDetailPage() {
   const params = useParams<{ id: string }>();
@@ -12,19 +13,30 @@ export default function TransferDetailPage() {
   const router = useRouter();
   const [transfer, setTransfer] = useState<TransferResponse | null>(null);
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
+  const [products, setProducts] = useState<Map<string, ProductResponse>>(new Map());
+  const [serialSel, setSerialSel] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    Promise.all([api.transfers.get(id), api.me()])
-      .then(([t, u]) => {
+    Promise.all([api.transfers.get(id), api.me(), api.products()])
+      .then(([t, u, ps]) => {
         setTransfer(t);
         setUser(u);
+        setProducts(new Map(ps.map((p) => [p.id, p])));
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
   }, [id]);
 
   useEffect(load, [load]);
+
+  const serialItems = useMemo(
+    () => (transfer?.items ?? []).filter((i) => products.get(i.productId)?.isSerialized && Number(i.quantity) > 0),
+    [transfer, products],
+  );
+  const serialsSatisfied = serialItems.every((i) => (serialSel[i.id]?.length ?? 0) === Number(i.quantity));
+  const dispatchWithSerials = () =>
+    api.transfers.dispatch(id, serialItems.map((i) => ({ itemId: i.id, serialNumbers: serialSel[i.id] ?? [] })));
 
   async function act(fn: () => Promise<TransferResponse>) {
     setBusy(true);
@@ -73,7 +85,7 @@ export default function TransferDetailPage() {
               {transfer.items.map((i) => (
                 <tr key={i.id}>
                   <td>{i.productSku}</td>
-                  <td>{i.productName}</td>
+                  <td>{i.productName}{i.serialNumbers.length > 0 ? <span className="muted" style={{ fontSize: 11 }}> · {i.serialNumbers.join(', ')}</span> : null}</td>
                   <td className="num">{i.quantity}</td>
                   <td className="num">{i.qtyDispatched}</td>
                   <td className="num">{i.qtyReceived}</td>
@@ -82,6 +94,34 @@ export default function TransferDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Dispatch: select the exact serials at the source (2D.3C). */}
+        {s === 'APPROVED' && canTransfer && serialItems.length > 0 && (
+          <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+            {serialItems.map((i) => (
+              <div key={i.id}>
+                <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>{i.productSku} — select serials to send</div>
+                <SerialPicker
+                  mode="select" productId={i.productId} variantId={i.variantId}
+                  warehouseId={transfer.sourceWarehouseId} requiredCount={Number(i.quantity)}
+                  value={serialSel[i.id] ?? []} onChange={(v) => setSerialSel((prev) => ({ ...prev, [i.id]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Receive: show the exact dispatched set — no generic picker, so no substitution (2D.3C). */}
+        {(s === 'IN_TRANSIT' || s === 'PARTIALLY_RECEIVED') && serialItems.length > 0 && (
+          <div className="card" style={{ marginTop: 16, background: 'var(--surface-2,#fafafa)' }}>
+            <strong style={{ fontSize: 13 }}>Verify the dispatched serials on arrival</strong>
+            {serialItems.map((i) => (
+              <div key={i.id} style={{ marginTop: 6, fontSize: 12 }}>
+                <span className="muted">{i.productSku}:</span> <span style={{ fontFamily: 'monospace' }}>{i.serialNumbers.join(', ') || '—'}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {error && <div className="error">{error}</div>}
 
@@ -106,7 +146,9 @@ export default function TransferDetailPage() {
           )}
           {s === 'FOR_APPROVAL' && !canApprove && <span className="muted">Awaiting approval.</span>}
           {s === 'APPROVED' && canTransfer && (
-            <button className="btn" disabled={busy} onClick={() => act(() => api.transfers.dispatch(id))}>Dispatch (send in-transit)</button>
+            <button className="btn" disabled={busy || !serialsSatisfied} onClick={() => act(dispatchWithSerials)}>
+              Dispatch (send in-transit){serialItems.length > 0 && !serialsSatisfied ? ' (select serials first)' : ''}
+            </button>
           )}
           {(s === 'IN_TRANSIT' || s === 'PARTIALLY_RECEIVED') && canTransfer && (
             <button className="btn" disabled={busy} onClick={() => act(() => api.transfers.receive(id))}>Receive at destination</button>
