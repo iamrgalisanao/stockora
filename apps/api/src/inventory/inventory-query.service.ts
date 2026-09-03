@@ -235,69 +235,80 @@ export class InventoryQueryService {
   }
 
   /**
-   * Recomputes balances from the ledger (sum of deltas) and compares against the
-   * materialized projection. The ledger is authoritative; any drift is a bug.
+   * Health check across two authoritative sources, each per (product, variant, warehouse):
+   *  - the four LEDGER-backed buckets (on_hand / in_transit / quarantined / damaged) must equal the sum of
+   *    the corresponding movement deltas (the append-only ledger is authoritative);
+   *  - the RESERVATION-backed `reserved` bucket must equal Σ remaining quantity of ACTIVE reservations
+   *    (reservations are off-ledger, ADR 0005 — reserved is adjusted directly, never via a movement, so it
+   *    is reconciled against its own source, not the ledger).
+   * Balances are aggregated across lots to the ledger/reservation grain before comparison.
    */
   async reconcile(organizationId: string): Promise<ReconciliationResult> {
     const grouped = await this.prisma.inventoryMovement.groupBy({
       by: ['productId', 'variantId', 'warehouseId'],
       where: { organizationId },
-      _sum: {
-        onHandDelta: true,
-        reservedDelta: true,
-        inTransitDelta: true,
-        quarantinedDelta: true,
-        damagedDelta: true,
-      },
+      _sum: { onHandDelta: true, inTransitDelta: true, quarantinedDelta: true, damagedDelta: true },
     });
 
-    type BucketSums = {
-      onHand: Prisma.Decimal;
-      reserved: Prisma.Decimal;
-      inTransit: Prisma.Decimal;
-      quarantined: Prisma.Decimal;
-      damaged: Prisma.Decimal;
-    };
-    const ledger = new Map<string, BucketSums>();
+    type LedgerSums = { onHand: Prisma.Decimal; inTransit: Prisma.Decimal; quarantined: Prisma.Decimal; damaged: Prisma.Decimal };
+    const ledger = new Map<string, LedgerSums>();
+    const key = (p: string, v: string, w: string) => `${p}|${v}|${w}`;
     for (const g of grouped) {
-      const key = `${g.productId}|${g.variantId ?? NIL_UUID}|${g.warehouseId}`;
-      ledger.set(key, {
+      ledger.set(key(g.productId, g.variantId ?? NIL_UUID, g.warehouseId), {
         onHand: D(g._sum.onHandDelta ?? 0),
-        reserved: D(g._sum.reservedDelta ?? 0),
         inTransit: D(g._sum.inTransitDelta ?? 0),
         quarantined: D(g._sum.quarantinedDelta ?? 0),
         damaged: D(g._sum.damagedDelta ?? 0),
       });
     }
 
-    const balances = await this.prisma.inventoryBalance.findMany({ where: { organizationId } });
-    const drift: ReconciliationResult['drift'] = [];
+    // Σ remaining of active reservations, per (product, variant, warehouse) — the authoritative `reserved`.
+    const resvLines = await this.prisma.reservationLine.findMany({
+      where: { reservation: { organizationId, status: { in: ['RESERVED', 'PARTIALLY_CONSUMED'] } } },
+      select: { productId: true, variantId: true, quantity: true, consumedQuantity: true, reservation: { select: { warehouseId: true } } },
+    });
+    const committed = new Map<string, Prisma.Decimal>();
+    for (const l of resvLines) {
+      const k = key(l.productId, l.variantId, l.reservation.warehouseId);
+      committed.set(k, (committed.get(k) ?? ZERO).add(D(l.quantity).sub(D(l.consumedQuantity))));
+    }
 
+    // Aggregate balance buckets across lots to the same grain.
+    const balances = await this.prisma.inventoryBalance.findMany({ where: { organizationId } });
+    type BalSums = LedgerSums & { reserved: Prisma.Decimal };
+    const projected = new Map<string, BalSums>();
     for (const b of balances) {
-      const key = `${b.productId}|${b.variantId}|${b.warehouseId}`;
-      const l = ledger.get(key) ?? {
-        onHand: ZERO,
-        reserved: ZERO,
-        inTransit: ZERO,
-        quarantined: ZERO,
-        damaged: ZERO,
-      };
+      const k = key(b.productId, b.variantId, b.warehouseId);
+      const cur = projected.get(k) ?? { onHand: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO, reserved: ZERO };
+      projected.set(k, {
+        onHand: cur.onHand.add(D(b.onHand)),
+        inTransit: cur.inTransit.add(D(b.inTransit)),
+        quarantined: cur.quarantined.add(D(b.quarantined)),
+        damaged: cur.damaged.add(D(b.damaged)),
+        reserved: cur.reserved.add(D(b.reserved)),
+      });
+    }
+
+    const drift: ReconciliationResult['drift'] = [];
+    for (const [k, p] of projected) {
+      const [productId, variantId, warehouseId] = k.split('|') as [string, string, string];
+      const l = ledger.get(k) ?? { onHand: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO };
       const compare: Array<[string, Prisma.Decimal, Prisma.Decimal]> = [
-        ['on_hand', D(b.onHand), l.onHand],
-        ['reserved', D(b.reserved), l.reserved],
-        ['in_transit', D(b.inTransit), l.inTransit],
-        ['quarantined', D(b.quarantined), l.quarantined],
-        ['damaged', D(b.damaged), l.damaged],
+        ['on_hand', p.onHand, l.onHand],
+        ['in_transit', p.inTransit, l.inTransit],
+        ['quarantined', p.quarantined, l.quarantined],
+        ['damaged', p.damaged, l.damaged],
+        ['reserved', p.reserved, committed.get(k) ?? ZERO], // reconciled against active reservations
       ];
-      for (const [bucket, projected, ledgerVal] of compare) {
-        if (!projected.equals(ledgerVal)) {
+      for (const [bucket, projectedVal, sourceVal] of compare) {
+        if (!projectedVal.equals(sourceVal)) {
           drift.push({
-            productId: b.productId,
-            variantId: b.variantId === NIL_UUID ? null : b.variantId,
-            warehouseId: b.warehouseId,
+            productId,
+            variantId: variantId === NIL_UUID ? null : variantId,
+            warehouseId,
             bucket,
-            projected: projected.toString(),
-            ledger: ledgerVal.toString(),
+            projected: projectedVal.toString(),
+            ledger: sourceVal.toString(),
           });
         }
       }

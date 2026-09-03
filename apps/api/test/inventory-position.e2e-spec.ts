@@ -93,11 +93,26 @@ describe('Inventory position + availability lens (e2e, 2C.4)', () => {
     const qb = (await http().get(`/api/returns/quarantine-breakdown?productId=${p}&warehouseId=${whMain}`).set(auth()).expect(200)).body as Array<any>;
     expect(qb.reduce((s, r) => s + Number(r.remaining), 0)).toBe(3);
 
-    // Ledger reconciliation holds for every ledger-backed bucket. `reserved` is off-ledger by design
-    // (ADR 0005 — reservations adjust the bucket directly, with no movement), so it is the only bucket
-    // that may show as drift here; on_hand / in_transit / quarantined / damaged must all reconcile.
+    // Full reconciliation holds: ledger-backed buckets vs movement deltas, and `reserved` vs active
+    // reservations (ADR 0005 — reserved is reconciled against its own source, not the ledger).
     const rec = (await http().post('/api/inventory/reconcile').set(auth()).expect(201)).body;
-    expect(rec.drift.every((d: { bucket: string }) => d.bucket === 'reserved')).toBe(true);
+    expect(rec.ok).toBe(true);
+  });
+
+  it('reconcile checks reserved against active reservations, not the ledger (ADR 0005)', async () => {
+    const p = await newProduct('RECON');
+    await opening(p, 50, whMain);
+    // A confirmed reservation must reconcile (reserved bucket = Σ active reservation remaining).
+    const r = (await http().post('/api/reservations').set(auth()).send({ warehouseId: whMain, lines: [{ productId: p, quantity: 12 }] }).expect(201)).body;
+    await http().post(`/api/reservations/${r.id}/confirm`).set(auth()).expect(201);
+    let rec = (await http().post('/api/inventory/reconcile').set(auth()).expect(201)).body;
+    expect(rec.drift.filter((d: any) => d.productId === p)).toEqual([]);
+    // Releasing the reservation returns reserved to 0 and still reconciles.
+    await http().post(`/api/reservations/${r.id}/release`).set(auth()).expect(201);
+    rec = (await http().post('/api/inventory/reconcile').set(auth()).expect(201)).body;
+    expect(rec.drift.filter((d: any) => d.productId === p)).toEqual([]);
+    const row = (await positions(`?warehouseId=${whMain}&productId=${p}`))[0]!;
+    expect(row.reserved).toBe('0');
   });
 
   it('lot-aware positions stay distinct and roll up; non-batch has no lot dimension', async () => {
