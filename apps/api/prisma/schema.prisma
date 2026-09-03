@@ -384,6 +384,8 @@ model StockReleaseItem {
   locationId     String? @map("location_id") @db.Uuid
   // Optional line-level link: posting this line consumes the referenced reservation (2B.1B).
   reservationLineId String? @map("reservation_line_id") @db.Uuid
+  // Serial identities issued for this line (2D.3B, ADR 0012) — captured at post for serialized products.
+  serialNumbers  String[] @default([]) @map("serial_numbers")
   remarks        String?
 
   release StockRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
@@ -467,6 +469,9 @@ model StockTransferItem {
   // Lot identity (2C.1B). One lot per line for batch products (multi-lot = multiple lines); carried
   // unchanged through dispatch + receive. Scalar (validated at posting), null for non-batch.
   lotId            String? @map("lot_id") @db.Uuid
+  // Serial identities moved by this line (2D.3B, ADR 0012) — captured at dispatch, validated unchanged at
+  // receive so the same units land at the destination (no substitution).
+  serialNumbers    String[] @default([]) @map("serial_numbers")
   remarks          String?
 
   transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
@@ -549,6 +554,11 @@ model StockAdjustmentItem {
   locationId     String?             @map("location_id") @db.Uuid
   // Lot identity (2C.1B) — required for batch products; a positive adjustment must target an existing lot.
   lotId          String?             @map("lot_id") @db.Uuid
+  // Serial identities (2D.3B, ADR 0012): OUT removes these existing serials from inventory (→ DISPOSED);
+  // IN registers these as new serials (→ IN_STOCK) — never an anonymous +N for a serialized product.
+  serialNumbers  String[]            @default([]) @map("serial_numbers")
+  // For a serialized OUT line: whether removed units become DISPOSED (default) or DAMAGED (on_hand→damaged).
+  serialDisposition String?          @map("serial_disposition")
   remarks        String?
 
   adjustment StockAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
@@ -618,6 +628,10 @@ model StockCountItem {
   unitCost       Decimal  @default(0) @map("unit_cost") @db.Decimal(18, 4)
   // Lot identity (2C.1B). Batch-tracked counts snapshot one item per lot; variance posts against the lot.
   lotId          String?  @map("lot_id") @db.Uuid
+  // Serial reconciliation (2D.3B, ADR 0012). Snapshot of the expected IN_STOCK serials for a serialized
+  // item, and the observed serials entered by the counter; posting reconciles the two sets, not a quantity.
+  expectedSerials String[] @default([]) @map("expected_serials")
+  observedSerials String[] @default([]) @map("observed_serials")
   remarks        String?
 
   count   StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
@@ -1108,6 +1122,9 @@ model ReturnLine {
   quantity         Decimal @db.Decimal(18, 4) // declared at DRAFT
   receivedQuantity Decimal @default(0) @map("received_quantity") @db.Decimal(18, 4)
   disposedQuantity Decimal @default(0) @map("disposed_quantity") @db.Decimal(18, 4)
+  // Serial identities being returned (2D.3B, ADR 0012) — must be previously ISSUED serials of this
+  // product; intake transitions them ISSUED → QUARANTINED.
+  serialNumbers    String[] @default([]) @map("serial_numbers")
 
   return       InventoryReturn     @relation(fields: [returnId], references: [id], onDelete: Cascade)
   product      Product             @relation(fields: [productId], references: [id])
@@ -1125,6 +1142,8 @@ model ReturnDisposition {
   returnLineId  String          @map("return_line_id") @db.Uuid
   type          DispositionType
   quantity      Decimal         @db.Decimal(18, 4)
+  // Serial identities dispositioned (2D.3B, ADR 0012): QUARANTINED → IN_STOCK (RESTOCK) | DAMAGED | DISPOSED.
+  serialNumbers String[]        @default([]) @map("serial_numbers")
   reason        String?
   notes         String?
   performedById String?         @map("performed_by_id") @db.Uuid

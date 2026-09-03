@@ -49,3 +49,14 @@ export class UpdateTransferDto {
 export class RejectTransferDto {
   @IsString() @MaxLength(500) reason!: string;
 }
+
+/** Serial identities moved by one transfer line (2D.3B, ADR 0012) — chosen at dispatch. */
+export class TransferSerialInputDto {
+  @IsUUID() itemId!: string;
+  @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true }) serialNumbers!: string[];
+}
+
+export class DispatchTransferDto {
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => TransferSerialInputDto)
+  serials?: TransferSerialInputDto[];
+}

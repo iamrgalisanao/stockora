@@ -24,6 +24,7 @@ export interface TransferItemResponse {
   qtyDispatched: string;
   qtyReceived: string;
   remarks: string | null;
+  serialNumbers: string[];
 }
 
 export interface TransferResponse {

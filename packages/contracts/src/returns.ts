@@ -39,6 +39,7 @@ export interface ReturnDispositionResponse {
   notes: string | null;
   performedById: string | null;
   performedAt: string;
+  serialNumbers: string[];
 }
 
 export interface ReturnLineResponse {
@@ -52,6 +53,7 @@ export interface ReturnLineResponse {
   receivedQuantity: string; // taken into quarantine at RECEIVE
   disposedQuantity: string; // total drawn out of quarantine by dispositions
   remainingQuarantine: string; // receivedQuantity - disposedQuantity
+  serialNumbers: string[];
   dispositions: ReturnDispositionResponse[];
 }
 

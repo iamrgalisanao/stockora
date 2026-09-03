@@ -72,7 +72,8 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ 2D.2 — Notifications complete.**
 - **2D.3 — Serial Tracking** (unit-level serial identity as a registry-with-state over the ledger; [ADR 0012](docs/adr/0012-serial-tracking.md)):
   - **2D.3A — Serial Core + Receiving (InventorySerial registry + per-product SerialTrackingPolicy; product-scoped case-sensitive uniqueness; capture-at-receipt on the goods-receipt line, validated up front and written atomically with the ledger movement — one quantity movement, N linked serials; serial query API; bucket-mapped reconciliation health check; Serials UI + receiving-form serial capture):** ✅ [docs/PHASE-2D3A-SERIAL-CORE.md](docs/PHASE-2D3A-SERIAL-CORE.md)
-  - **Next:** 2D.3B — Propagation (release/transfer/return state transitions + capture-at-issue), then 2D.3C — Traceability UX.
+  - **2D.3B — Propagation (one immutable serial identity through release/transfer/return/disposition/adjustment/count; capture-at-issue where configured; each transition atomic with its ledger movement; batch+serial lot-match and no-substitution transfers; reconciliation refined so IN_STOCK maps to onHand−quarantined):** ✅ [docs/PHASE-2D3B-PROPAGATION.md](docs/PHASE-2D3B-PROPAGATION.md)
+  - **Next:** 2D.3C — Traceability UX (serial explorer/history, shared serial picker/scanner, operational selection in the workflow forms).
 - Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working

@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { MovementType, Prisma, ReturnStatus } from '@prisma/client';
+import { MovementType, Prisma, ReturnStatus, SerialStatus } from '@prisma/client';
 import { PERMISSIONS, type DispositionType, type QuarantineBreakdownRow, type ReturnResponse, type ReturnType } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
+import { SerialsService } from '../serials/serials.service';
 import type { RequestUser } from '../common/request-user';
 import { BucketDeltas, D, NIL_UUID, ZERO } from '../inventory/inventory.constants';
 import { CreateReturnDto, CreateDispositionDto, ReceiveReturnDto } from './dto/return.dto';
@@ -54,6 +55,7 @@ export class ReturnsService {
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
+    private readonly serials: SerialsService,
   ) {}
 
   // ---- reads ----
@@ -155,6 +157,7 @@ export class ReturnsService {
               locationId: l.locationId,
               lotId: l.lotId,
               quantity: new Prisma.Decimal(l.quantity),
+              serialNumbers: l.serialNumbers,
             })),
           },
         },
@@ -198,9 +201,17 @@ export class ReturnsService {
     const postable = received.filter((r) => r.qty.gt(0));
     if (postable.length === 0) throw new BadRequestException('At least one line must receive a positive quantity');
 
+    // A serialized line receives exactly its declared serial set — a differing override would desync the
+    // registry from the quantity, so reject it (ADR 0012 §9).
+    for (const r of postable) {
+      if (r.line.serialNumbers.length > 0 && !r.qty.equals(D(r.line.serialNumbers.length))) {
+        throw new BadRequestException('A serialized return line must receive exactly its captured serial count');
+      }
+    }
+
     // Post RETURN_RECEIPT movements FIRST (idempotency-keyed so a retry never double-raises quarantine),
     // then persist received quantities + status — the same order the receiving flow uses.
-    await this.posting.returnReceipt(
+    const movements = await this.posting.returnReceipt(
       {
         organizationId,
         actorId: user.userId,
@@ -224,6 +235,17 @@ export class ReturnsService {
     await this.prisma.$transaction(async (tx) => {
       for (const r of received) {
         await tx.returnLine.update({ where: { id: r.line.id }, data: { receivedQuantity: r.qty } });
+      }
+      // Returned serials move ISSUED → QUARANTINED, atomically with intake (movements[i] ↔ postable[i]).
+      for (let i = 0; i < postable.length; i += 1) {
+        const line = postable[i]!.line;
+        if (line.serialNumbers.length > 0) {
+          await this.serials.transitionExistingInTx(tx, organizationId, {
+            productId: line.productId, variantKey: line.variantId, serialNumbers: line.serialNumbers,
+            expectFrom: [SerialStatus.ISSUED], to: SerialStatus.QUARANTINED,
+            setWarehouseId: existing.warehouseId, setLocationId: line.locationId, movementId: movements[i]!.id,
+          });
+        }
       }
       await tx.inventoryReturn.update({ where: { id }, data: { status: 'RECEIVED', receivedAt: now } });
     });
@@ -285,6 +307,7 @@ export class ReturnsService {
 
     const qty = new Prisma.Decimal(dto.quantity);
     const { movementType, deltas } = this.dispositionEffect(dto.type, qty);
+    const serialTarget = this.dispositionSerialTarget(dto.type);
     const idemKey = dto.idempotencyKey ? `return_disposition:${organizationId}:${dto.idempotencyKey}` : randomUUID();
 
     try {
@@ -307,8 +330,21 @@ export class ReturnsService {
           throw new BadRequestException(`Disposition ${qty.toString()} exceeds remaining quarantined ${remaining.toString()}`);
         }
 
+        // Serial validation (ADR 0012 §9). A serialized product needs exactly `quantity` QUARANTINED serials
+        // of this line — validated here, before the movement posts, so an invalid serial aborts the tx.
+        const product = await tx.product.findFirst({ where: { id: r.product_id, organizationId }, select: { isSerialized: true } });
+        const dispoSerials = this.serials.normalize(dto.serialNumbers ?? [], r.product_id);
+        if (product?.isSerialized) {
+          if (!qty.isInteger()) throw new BadRequestException('A serialized product must be dispositioned in whole units');
+          if (dispoSerials.length !== qty.toNumber()) {
+            throw new BadRequestException(`Expected ${qty.toString()} serial(s) for this disposition, got ${dispoSerials.length}`);
+          }
+        } else if (dispoSerials.length > 0) {
+          throw new BadRequestException('This product is not serialized and cannot carry serial numbers');
+        }
+
         // Immutable ledger posting (balance lock + bucket negative-guards as the second guard).
-        await this.posting.postLineInTx(
+        const movement = await this.posting.postLineInTx(
           tx,
           { organizationId, actorId: user.userId, idempotencyKey: idemKey, reason: dto.reason ?? null },
           {
@@ -327,9 +363,17 @@ export class ReturnsService {
           },
         );
 
+        if (dispoSerials.length > 0) {
+          await this.serials.transitionExistingInTx(tx, organizationId, {
+            productId: r.product_id, variantKey: r.variant_id, serialNumbers: dispoSerials,
+            expectFrom: [SerialStatus.QUARANTINED], to: serialTarget,
+            setWarehouseId: existing.warehouseId, setLocationId: r.location_id, movementId: movement.id,
+          });
+        }
+
         await tx.returnDisposition.create({
           data: {
-            returnLineId: dto.lineId, type: dto.type, quantity: qty,
+            returnLineId: dto.lineId, type: dto.type, quantity: qty, serialNumbers: dispoSerials,
             reason: dto.reason ?? null, notes: dto.notes ?? null, performedById: user.userId,
           },
         });
@@ -373,6 +417,16 @@ export class ReturnsService {
     }
   }
 
+  /** The serial lifecycle target for each disposition outcome (ADR 0012 §5, §9). */
+  private dispositionSerialTarget(type: DispositionType): SerialStatus {
+    switch (type) {
+      case 'RESTOCK': return SerialStatus.IN_STOCK; // hold released, unit sellable again
+      case 'DAMAGED': return SerialStatus.DAMAGED;
+      case 'RETURN_TO_SUPPLIER':
+      case 'DISPOSE': return SerialStatus.DISPOSED; // leaves the building
+    }
+  }
+
   private isUniqueViolation(e: unknown): boolean {
     return typeof e === 'object' && e !== null && 'code' in e && (e as { code: string }).code === 'P2002';
   }
@@ -382,12 +436,12 @@ export class ReturnsService {
   private async resolveLine(
     organizationId: string,
     warehouseId: string,
-    line: { productId: string; variantId?: string; locationId?: string; lotId?: string; quantity: number },
-  ): Promise<{ productId: string; variantId: string; locationId: string | null; lotId: string | null; quantity: number }> {
+    line: { productId: string; variantId?: string; locationId?: string; lotId?: string; quantity: number; serialNumbers?: string[] },
+  ): Promise<{ productId: string; variantId: string; locationId: string | null; lotId: string | null; quantity: number; serialNumbers: string[] }> {
     // Invariant 10: only ACTIVE products/variants/locations can start a new return intake.
     const product = await this.prisma.product.findFirst({
       where: { id: line.productId, organizationId },
-      select: { status: true, isBatchTracked: true },
+      select: { status: true, isBatchTracked: true, isSerialized: true },
     });
     if (!product) throw new BadRequestException('Product not found');
     if (product.status !== 'ACTIVE') throw new BadRequestException('Cannot return a non-active product');
@@ -422,7 +476,30 @@ export class ReturnsService {
       throw new BadRequestException('This product is not batch-tracked and cannot carry a lot');
     }
 
-    return { productId: line.productId, variantId, locationId: line.locationId ?? null, lotId, quantity: line.quantity };
+    // Serial identities (ADR 0012 §9): a returned serialized unit must be a KNOWN, previously ISSUED serial
+    // of this product — return never creates serials, and an in-stock or unknown serial is rejected.
+    let serialNumbers: string[] = [];
+    if (product.isSerialized) {
+      if (!Number.isInteger(line.quantity)) throw new BadRequestException('A serialized product must be returned in whole units');
+      serialNumbers = this.serials.normalize(line.serialNumbers ?? [], line.productId);
+      if (serialNumbers.length !== line.quantity) {
+        throw new BadRequestException(`Expected ${line.quantity} serial(s) for the return line, got ${serialNumbers.length}`);
+      }
+      const rows = await this.prisma.inventorySerial.findMany({
+        where: { organizationId, productId: line.productId, variantId, serialNumber: { in: serialNumbers } },
+      });
+      const byNum = new Map(rows.map((r) => [r.serialNumber, r]));
+      for (const sn of serialNumbers) {
+        const r = byNum.get(sn);
+        if (!r) throw new BadRequestException(`Serial ${sn} is not a known serial for this product`);
+        if (r.status !== 'ISSUED') throw new BadRequestException(`Serial ${sn} is ${r.status}; only an ISSUED serial can be returned`);
+        if (lotId && r.lotId !== lotId) throw new BadRequestException(`Serial ${sn} does not belong to the return lot`);
+      }
+    } else if (line.serialNumbers && line.serialNumbers.length > 0) {
+      throw new BadRequestException('This product is not serialized and cannot carry serial numbers');
+    }
+
+    return { productId: line.productId, variantId, locationId: line.locationId ?? null, lotId, quantity: line.quantity, serialNumbers };
   }
 
   private async nextNumber(tx: Prisma.TransactionClient, organizationId: string): Promise<string> {
@@ -469,6 +546,7 @@ export class ReturnsService {
           receivedQuantity: l.receivedQuantity.toString(),
           disposedQuantity: l.disposedQuantity.toString(),
           remainingQuarantine: remaining.toString(),
+          serialNumbers: l.serialNumbers,
           dispositions: l.dispositions.map((d) => ({
             id: d.id,
             type: d.type,
@@ -477,6 +555,7 @@ export class ReturnsService {
             notes: d.notes,
             performedById: d.performedById,
             performedAt: d.performedAt.toISOString(),
+            serialNumbers: d.serialNumbers,
           })),
         };
       }),

@@ -82,7 +82,17 @@ export class RejectReleaseDto {
   @IsString() @MaxLength(500) reason!: string;
 }
 
+/** Serial identities issued for one release line (2D.3B, ADR 0012) — chosen when the release is posted. */
+export class ReleaseSerialInputDto {
+  @IsUUID() itemId!: string;
+  @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true }) serialNumbers!: string[];
+}
+
 export class PostReleaseDto {
   /** Required when a batch line's lot selection deviates from FEFO under a FEFO policy (ADR 0008 §6). */
   @IsOptional() @IsString() @MaxLength(500) fefoOverrideReason?: string;
+
+  /** Per-line serial identities for serialized products (selected for RECEIPT capture, created for ISSUE). */
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ReleaseSerialInputDto)
+  serials?: ReleaseSerialInputDto[];
 }

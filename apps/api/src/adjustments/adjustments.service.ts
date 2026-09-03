@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, AdjustmentStatus } from '@prisma/client';
+import { Prisma, AdjustmentStatus, MovementType, SerialStatus } from '@prisma/client';
 import { PERMISSIONS } from '@iw/contracts';
 import type { AdjustmentListItem, AdjustmentResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,7 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
-import { NIL_UUID } from '../inventory/inventory.constants';
+import { SerialsService } from '../serials/serials.service';
+import { NIL_UUID, ZERO } from '../inventory/inventory.constants';
 import {
   AdjustmentItemInputDto,
   CreateAdjustmentDto,
@@ -32,6 +33,7 @@ export class AdjustmentsService {
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
+    private readonly serials: SerialsService,
   ) {}
 
   async list(organizationId: string, user: RequestUser): Promise<AdjustmentListItem[]> {
@@ -215,40 +217,103 @@ export class AdjustmentsService {
     if (adj.status === AdjustmentStatus.POSTED) return this.toResponse(adj, user);
     this.assertStatus(adj, [AdjustmentStatus.APPROVED], 'posted');
 
-    // Lot flows through to the posting layer (ADR 0007), which enforces batch ⟺ lot and requires the lot
-    // to exist — adjustments never create lots (a positive adjustment must target an existing lot).
-    const inLines = adj.items
-      .filter((i) => i.direction === 'IN')
-      .map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, unitCost: i.unitCost, locationId: i.locationId, lotId: i.lotId }));
-    const outLines = adj.items
-      .filter((i) => i.direction === 'OUT')
-      .map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, locationId: i.locationId, lotId: i.lotId }));
-
-    const base = idempotencyKey ?? `stock_adjustment:${adj.id}`;
-    if (inLines.length > 0) {
-      await this.posting.adjustment(
-        { organizationId, actorId: user.userId, idempotencyKey: `${base}:IN` },
-        { warehouseId: adj.warehouseId, direction: 'IN', referenceId: adj.id, lines: inLines },
-      );
+    // Resolve serialization per product and validate every serialized line BEFORE posting (ADR 0012 §9):
+    // an OUT line removes exactly `quantity` existing IN_STOCK serials (→ DISPOSED or DAMAGED); an IN line
+    // registers exactly `quantity` NEW serials (→ IN_STOCK). Never an anonymous ±N for a serialized product.
+    const plans = new Map<string, { serialized: boolean; numbers: string[] }>();
+    const seen = new Set<string>();
+    for (const i of adj.items) {
+      const meta = await this.serials.serialMetaFor(organizationId, i.productId);
+      const variantKey = i.variantId ?? NIL_UUID;
+      if (!meta.isSerialized) {
+        if (i.serialNumbers.length > 0) throw new BadRequestException('A non-serialized product cannot carry serial numbers');
+        plans.set(i.id, { serialized: false, numbers: [] });
+        continue;
+      }
+      const q = new Prisma.Decimal(i.quantity);
+      if (!q.isInteger()) throw new BadRequestException('A serialized product must be adjusted in whole units');
+      const numbers = this.serials.normalize(i.serialNumbers, i.productId);
+      if (numbers.length !== q.toNumber()) throw new BadRequestException(`A serialized ${i.direction} line needs exactly ${q.toString()} serial(s), got ${numbers.length}`);
+      for (const sn of numbers) { const k = `${i.productId}::${variantKey}::${sn}`; if (seen.has(k)) throw new BadRequestException(`Serial ${sn} appears on more than one line`); seen.add(k); }
+      if (i.direction === 'OUT') {
+        const rows = await this.prisma.inventorySerial.findMany({ where: { organizationId, productId: i.productId, variantId: variantKey, serialNumber: { in: numbers } } });
+        const byNum = new Map(rows.map((r) => [r.serialNumber, r]));
+        for (const sn of numbers) {
+          const r = byNum.get(sn);
+          if (!r) throw new BadRequestException(`Serial ${sn} is not registered for this product`);
+          if (r.status !== 'IN_STOCK') throw new BadRequestException(`Serial ${sn} is ${r.status} and cannot be adjusted out`);
+          if (r.currentWarehouseId !== adj.warehouseId) throw new BadRequestException(`Serial ${sn} is not in this warehouse`);
+          if (i.lotId && r.lotId !== i.lotId) throw new BadRequestException(`Serial ${sn} does not belong to the line lot`);
+        }
+      } else {
+        const clash = await this.prisma.inventorySerial.findFirst({ where: { organizationId, productId: i.productId, variantId: variantKey, serialNumber: { in: numbers } }, select: { serialNumber: true } });
+        if (clash) throw new BadRequestException(`Serial ${clash.serialNumber} is already registered for this product`);
+      }
+      plans.set(i.id, { serialized: true, numbers });
     }
-    if (outLines.length > 0) {
-      await this.posting.adjustment(
-        { organizationId, actorId: user.userId, idempotencyKey: `${base}:OUT` },
-        { warehouseId: adj.warehouseId, direction: 'OUT', referenceId: adj.id, lines: outLines },
-      );
-    }
 
-    await this.prisma.stockAdjustment.update({
-      where: { id },
-      data: { status: AdjustmentStatus.POSTED, postedAt: new Date() },
-    });
+    // Lot flows through to the posting layer (ADR 0007). Everything posts + transitions in ONE transaction
+    // so the ledger and the serial registry commit together (a DAMAGED serial rides an on_hand→damaged move).
+    const key = idempotencyKey ?? `stock_adjustment:${adj.id}`;
+    let firstKeyUsed = false;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const i of adj.items) {
+          const plan = plans.get(i.id)!;
+          const variantKey = i.variantId ?? NIL_UUID;
+          const q = new Prisma.Decimal(i.quantity);
+          const damaged = i.direction === 'OUT' && plan.serialized && i.serialDisposition === 'DAMAGED';
+          const movementType = i.direction === 'IN'
+            ? MovementType.STOCK_ADJUSTMENT_IN
+            : damaged ? MovementType.DAMAGE : MovementType.STOCK_ADJUSTMENT_OUT;
+          const movement = await this.posting.postLineInTx(
+            tx,
+            { organizationId, actorId: user.userId, idempotencyKey: firstKeyUsed ? null : key },
+            {
+              movementType,
+              warehouseId: adj.warehouseId,
+              referenceType: 'stock_adjustment',
+              referenceId: adj.id,
+              line: {
+                productId: i.productId, variantId: i.variantId, quantity: q,
+                unitCost: i.direction === 'IN' ? i.unitCost : null, locationId: i.locationId, lotId: i.lotId,
+                // DAMAGE from stock: on_hand → damaged (default OUT would only drop on_hand).
+                ...(damaged ? { deltas: { onHand: q.neg(), reserved: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: q } } : {}),
+              },
+            },
+          );
+          firstKeyUsed = true;
+          if (plan.serialized) {
+            if (i.direction === 'IN') {
+              await this.serials.createSerialsInTx(tx, organizationId, {
+                productId: i.productId, variantKey, lotId: i.lotId, serialNumbers: plan.numbers,
+                status: SerialStatus.IN_STOCK, warehouseId: adj.warehouseId, locationId: i.locationId, movementId: movement.id, received: true,
+              });
+            } else {
+              await this.serials.transitionExistingInTx(tx, organizationId, {
+                productId: i.productId, variantKey, serialNumbers: plan.numbers,
+                expectFrom: [SerialStatus.IN_STOCK], to: damaged ? SerialStatus.DAMAGED : SerialStatus.DISPOSED,
+                requireWarehouseId: adj.warehouseId, movementId: movement.id,
+              });
+            }
+          }
+        }
+        await tx.stockAdjustment.update({ where: { id }, data: { status: AdjustmentStatus.POSTED, postedAt: new Date() } });
+      });
+    } catch (e) {
+      if (this.isUniqueViolation(e)) {
+        const already = await this.load(organizationId, id);
+        if (already.status === AdjustmentStatus.POSTED) return this.toResponse(already, user);
+      }
+      throw e;
+    }
     await this.audit.record({
       organizationId,
       userId: user.userId,
       action: 'stock_adjustment.posted',
       entityType: 'stock_adjustment',
       entityId: id,
-      newValue: { in: inLines.length, out: outLines.length },
+      newValue: { lines: adj.items.length },
     });
     return this.get(organizationId, user, id);
   }
@@ -311,8 +376,14 @@ export class AdjustmentsService {
       unitCost: i.unitCost ?? 0,
       locationId: i.locationId ?? null,
       lotId: i.lotId ?? null,
+      serialNumbers: i.serialNumbers ?? [],
+      serialDisposition: i.direction === 'OUT' ? i.serialDisposition ?? null : null,
       remarks: i.remarks ?? null,
     };
+  }
+
+  private isUniqueViolation(e: unknown): boolean {
+    return typeof e === 'object' && e !== null && 'code' in e && (e as { code: string }).code === 'P2002';
   }
 
   private assertStatus(adj: AdjustmentWithItems, allowed: AdjustmentStatus[], verb: string): void {

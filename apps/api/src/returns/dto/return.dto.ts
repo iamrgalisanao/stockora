@@ -22,6 +22,8 @@ export class CreateReturnLineDto {
   @IsOptional() @IsUUID() locationId?: string;
   @IsOptional() @IsUUID() lotId?: string; // required for batch-tracked products (ADR 0007)
   @IsNumber(q) @IsPositive() quantity!: number;
+  /** Serialized products: the previously ISSUED serials being returned (2D.3B, ADR 0012). */
+  @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true }) serialNumbers?: string[];
 }
 
 export class CreateReturnDto {
@@ -59,6 +61,8 @@ export class CreateDispositionDto {
   @IsNumber(q) @IsPositive() quantity!: number;
   @IsOptional() @IsString() @MaxLength(500) reason?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+  /** Serialized products: the QUARANTINED serials being dispositioned (2D.3B, ADR 0012). */
+  @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true }) serialNumbers?: string[];
   /** Optional client key — a replay with the same key is a no-op (does not post twice). */
   @IsOptional() @IsString() @MaxLength(120) idempotencyKey?: string;
 }

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, CountStatus, CountType } from '@prisma/client';
+import { Prisma, CountStatus, CountType, MovementType, SerialStatus } from '@prisma/client';
 import { PERMISSIONS } from '@iw/contracts';
 import type { CountListItem, CountResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
@@ -8,6 +8,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import type { RequestUser } from '../common/request-user';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
+import { SerialsService } from '../serials/serials.service';
 import { NIL_UUID } from '../inventory/inventory.constants';
 import { CreateCountDto, EnterCountsDto } from './dto/count.dto';
 
@@ -26,7 +27,17 @@ export class CountsService {
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
     private readonly outbox: OutboxService,
+    private readonly serials: SerialsService,
   ) {}
+
+  /** Whether a product is serial-counted (serialized AND capture-at-receipt — the in-stock-tracked case). */
+  private async serialCountedProducts(organizationId: string, productIds: string[]): Promise<Set<string>> {
+    const ids = [...new Set(productIds)];
+    if (ids.length === 0) return new Set();
+    const products = await this.prisma.product.findMany({ where: { organizationId, id: { in: ids }, isSerialized: true }, select: { id: true } });
+    const policyMap = await this.serials.policyMapFor(organizationId, products.map((p) => p.id));
+    return new Set(products.filter((p) => (policyMap.get(p.id)?.captureMode ?? 'RECEIPT') === 'RECEIPT').map((p) => p.id));
+  }
 
   async list(organizationId: string, user: RequestUser): Promise<CountListItem[]> {
     const scope = user.warehouseScope !== null ? { in: user.warehouseScope } : undefined;
@@ -95,6 +106,21 @@ export class CountsService {
       balances.forEach(pushRow);
     }
 
+    // Snapshot the expected IN_STOCK serial set for each serial-counted item (ADR 0012 §9). Counting then
+    // reconciles serial identities, not just a quantity.
+    const serialCounted = await this.serialCountedProducts(organizationId, snapshot.map((s) => s.productId));
+    const itemData = await Promise.all(snapshot.map(async (s) => ({
+      organizationId,
+      productId: s.productId,
+      variantId: s.variantId,
+      lotId: s.lotId,
+      systemQty: s.systemQty,
+      unitCost: s.unitCost,
+      expectedSerials: serialCounted.has(s.productId)
+        ? await this.serials.inStockSerials(organizationId, s.productId, s.variantId ?? NIL_UUID, dto.warehouseId, s.lotId)
+        : [],
+    })));
+
     const countNumber = await this.nextNumber(organizationId);
     const count = await this.prisma.stockCount.create({
       data: {
@@ -105,16 +131,7 @@ export class CountsService {
         isBlind: dto.isBlind ?? false,
         notes: dto.notes ?? null,
         requestorId: user.userId,
-        items: {
-          create: snapshot.map((s) => ({
-            organizationId,
-            productId: s.productId,
-            variantId: s.variantId,
-            lotId: s.lotId,
-            systemQty: s.systemQty,
-            unitCost: s.unitCost,
-          })),
-        },
+        items: { create: itemData },
       },
     });
     await this.audit.record({
@@ -144,18 +161,21 @@ export class CountsService {
       where: { organizationId, warehouseId: scope.warehouseId, productId: scope.productId, variantId: scope.variantId, lotId: scope.lotId },
       select: { onHand: true, avgCost: true },
     });
+    const serialCounted = await this.serialCountedProducts(organizationId, [scope.productId]);
+    const lotId = scope.lotId === NIL_UUID ? null : scope.lotId;
+    const expectedSerials = serialCounted.has(scope.productId)
+      ? await this.serials.inStockSerials(organizationId, scope.productId, scope.variantId, scope.warehouseId, lotId)
+      : [];
     const items = rows.length
       ? rows.map((r) => ({
           organizationId, productId: scope.productId,
           variantId: scope.variantId === NIL_UUID ? null : scope.variantId,
-          lotId: scope.lotId === NIL_UUID ? null : scope.lotId,
-          systemQty: new Prisma.Decimal(r.onHand), unitCost: new Prisma.Decimal(r.avgCost),
+          lotId, systemQty: new Prisma.Decimal(r.onHand), unitCost: new Prisma.Decimal(r.avgCost), expectedSerials,
         }))
       : [{
           organizationId, productId: scope.productId,
           variantId: scope.variantId === NIL_UUID ? null : scope.variantId,
-          lotId: scope.lotId === NIL_UUID ? null : scope.lotId,
-          systemQty: new Prisma.Decimal(0), unitCost: new Prisma.Decimal(0),
+          lotId, systemQty: new Prisma.Decimal(0), unitCost: new Prisma.Decimal(0), expectedSerials,
         }];
 
     const countNumber = await this.nextNumber(organizationId);
@@ -183,11 +203,21 @@ export class CountsService {
     for (const entry of dto.items) {
       if (!byId.has(entry.itemId)) throw new BadRequestException(`Item ${entry.itemId} not in this count`);
     }
-    await this.prisma.$transaction(
-      dto.items.map((entry) =>
-        this.prisma.stockCountItem.update({ where: { id: entry.itemId }, data: { countedQty: entry.countedQty } }),
-      ),
-    );
+    const serialCounted = await this.serialCountedProducts(organizationId, count.items.map((i) => i.productId));
+    // A serialized item's counted quantity IS the observed serial-set size (identity, not just a number).
+    const updates = dto.items.map((entry) => {
+      const item = byId.get(entry.itemId)!;
+      if (serialCounted.has(item.productId)) {
+        const observed = this.serials.normalize(entry.observedSerials ?? [], item.productId);
+        return this.prisma.stockCountItem.update({
+          where: { id: entry.itemId },
+          data: { observedSerials: observed, countedQty: new Prisma.Decimal(observed.length) },
+        });
+      }
+      if (entry.countedQty === undefined) throw new BadRequestException(`Item ${entry.itemId} requires a counted quantity`);
+      return this.prisma.stockCountItem.update({ where: { id: entry.itemId }, data: { countedQty: entry.countedQty } });
+    });
+    await this.prisma.$transaction(updates);
     return this.get(organizationId, user, id);
   }
 
@@ -233,33 +263,75 @@ export class CountsService {
     if (count.status === CountStatus.POSTED) return this.toResponse(count, user);
     this.assertStatus(count, [CountStatus.APPROVED], 'posted');
 
-    const inLines: Array<{ productId: string; variantId: string | null; quantity: string; unitCost: string; lotId: string | null }> = [];
-    const outLines: Array<{ productId: string; variantId: string | null; quantity: string; lotId: string | null }> = [];
-    for (const item of count.items) {
-      const counted = item.countedQty ?? item.systemQty;
-      const variance = new Prisma.Decimal(counted).sub(item.systemQty);
-      if (variance.gt(0)) {
-        inLines.push({ productId: item.productId, variantId: item.variantId, quantity: variance.toString(), unitCost: item.unitCost.toString(), lotId: item.lotId });
-      } else if (variance.lt(0)) {
-        outLines.push({ productId: item.productId, variantId: item.variantId, quantity: variance.abs().toString(), lotId: item.lotId });
+    // Serial-counted items reconcile by IDENTITY: serials expected-but-not-observed are losses (→ DISPOSED
+    // via ADJUSTMENT_OUT), observed-but-not-expected are finds (→ registered IN_STOCK via ADJUSTMENT_IN).
+    // Every posting + serial transition commits in ONE transaction, so quantity never reconciles while the
+    // serial identity is wrong (ADR 0012 §8, §9). Non-serialized items keep the plain quantity-variance path.
+    const serialCounted = await this.serialCountedProducts(organizationId, count.items.map((i) => i.productId));
+    const key = idempotencyKey ?? `physical_count:${count.id}`;
+    let firstKeyUsed = false;
+    let inCount = 0;
+    let outCount = 0;
+    const postLine = (
+      tx: Prisma.TransactionClient,
+      movementType: MovementType,
+      item: { productId: string; variantId: string | null; lotId: string | null; unitCost: Prisma.Decimal },
+      quantity: Prisma.Decimal,
+      withCost: boolean,
+    ) => {
+      const p = this.posting.postLineInTx(
+        tx,
+        { organizationId, actorId: user.userId, idempotencyKey: firstKeyUsed ? null : key },
+        {
+          movementType, warehouseId: count.warehouseId, referenceType: 'stock_count', referenceId: count.id,
+          line: { productId: item.productId, variantId: item.variantId, quantity, unitCost: withCost ? item.unitCost : null, lotId: item.lotId },
+        },
+      );
+      firstKeyUsed = true;
+      return p;
+    };
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const item of count.items) {
+          const variantKey = item.variantId ?? NIL_UUID;
+          if (serialCounted.has(item.productId)) {
+            const observed = new Set(item.observedSerials);
+            const expected = new Set(item.expectedSerials);
+            const missing = item.expectedSerials.filter((s) => !observed.has(s));
+            const extra = item.observedSerials.filter((s) => !expected.has(s));
+            if (missing.length > 0) {
+              const m = await postLine(tx, MovementType.STOCK_ADJUSTMENT_OUT, item, new Prisma.Decimal(missing.length), false);
+              outCount += 1;
+              await this.serials.transitionExistingInTx(tx, organizationId, {
+                productId: item.productId, variantKey, serialNumbers: missing,
+                expectFrom: [SerialStatus.IN_STOCK], to: SerialStatus.DISPOSED, requireWarehouseId: count.warehouseId, movementId: m.id,
+              });
+            }
+            if (extra.length > 0) {
+              const m = await postLine(tx, MovementType.STOCK_ADJUSTMENT_IN, item, new Prisma.Decimal(extra.length), true);
+              inCount += 1;
+              await this.serials.createSerialsInTx(tx, organizationId, {
+                productId: item.productId, variantKey, lotId: item.lotId, serialNumbers: extra,
+                status: SerialStatus.IN_STOCK, warehouseId: count.warehouseId, movementId: m.id, received: true,
+              });
+            }
+          } else {
+            const counted = item.countedQty ?? item.systemQty;
+            const variance = new Prisma.Decimal(counted).sub(item.systemQty);
+            if (variance.gt(0)) { await postLine(tx, MovementType.STOCK_ADJUSTMENT_IN, item, variance, true); inCount += 1; }
+            else if (variance.lt(0)) { await postLine(tx, MovementType.STOCK_ADJUSTMENT_OUT, item, variance.abs(), false); outCount += 1; }
+          }
+        }
+        await tx.stockCount.update({ where: { id }, data: { status: CountStatus.POSTED, postedAt: new Date() } });
+      });
+    } catch (e) {
+      if (this.isUniqueViolation(e)) {
+        const already = await this.load(organizationId, id);
+        if (already.status === CountStatus.POSTED) return this.toResponse(already, user);
       }
+      throw e;
     }
-
-    const base = idempotencyKey ?? `physical_count:${count.id}`;
-    if (inLines.length > 0) {
-      await this.posting.adjustment(
-        { organizationId, actorId: user.userId, idempotencyKey: `${base}:IN` },
-        { warehouseId: count.warehouseId, direction: 'IN', referenceType: 'stock_count', referenceId: count.id, lines: inLines },
-      );
-    }
-    if (outLines.length > 0) {
-      await this.posting.adjustment(
-        { organizationId, actorId: user.userId, idempotencyKey: `${base}:OUT` },
-        { warehouseId: count.warehouseId, direction: 'OUT', referenceType: 'stock_count', referenceId: count.id, lines: outLines },
-      );
-    }
-
-    await this.prisma.stockCount.update({ where: { id }, data: { status: CountStatus.POSTED, postedAt: new Date() } });
     // Cycle-counting completion (2C.3B, ADR 0009 §6): a task COMPLETES only after its count POSTS. The
     // completion flip AND its CycleCountCompleted outbox event commit atomically (ADR 0010, 2D.1C) — if the
     // completion rolls back, the event disappears with it. The variance already went through the ledger.
@@ -296,7 +368,7 @@ export class CountsService {
       action: 'stock_count.posted',
       entityType: 'stock_count',
       entityId: id,
-      newValue: { in: inLines.length, out: outLines.length, cycleCountTaskId: count.cycleCountTaskId ?? null },
+      newValue: { in: inCount, out: outCount, cycleCountTaskId: count.cycleCountTaskId ?? null },
     });
     return this.get(organizationId, user, id);
   }
@@ -312,6 +384,10 @@ export class CountsService {
   }
 
   // ---- helpers ----
+
+  private isUniqueViolation(e: unknown): boolean {
+    return typeof e === 'object' && e !== null && 'code' in e && (e as { code: string }).code === 'P2002';
+  }
 
   private assertStatus(count: CountWithItems, allowed: CountStatus[], verb: string): void {
     if (!allowed.includes(count.status)) {
