@@ -35,6 +35,38 @@ export interface SerialResponse {
   issuedAt: string | null;
 }
 
+export const SERIAL_EVENT_TYPES = [
+  'RECEIVED',
+  'ISSUED',
+  'TRANSFERRED_OUT',
+  'TRANSFERRED_IN',
+  'RETURNED',
+  'RESTOCKED',
+  'DAMAGED',
+  'DISPOSED',
+  'ADJUSTED_IN',
+  'ADJUSTED_OUT',
+  'COUNT_FOUND',
+  'COUNT_LOST',
+] as const;
+export type SerialEventType = (typeof SERIAL_EVENT_TYPES)[number];
+
+/** One movement-history event for a serial, resolved to its originating document (2D.3C). */
+export interface SerialHistoryEvent {
+  type: SerialEventType;
+  at: string; // ISO timestamp
+  documentType: 'goods_receipt' | 'stock_release' | 'stock_transfer' | 'inventory_return' | 'stock_adjustment' | 'stock_count';
+  documentId: string;
+  documentNumber: string | null;
+  warehouseId: string | null;
+  detail: string | null;
+}
+
+export interface SerialHistoryResponse {
+  serial: SerialResponse;
+  events: SerialHistoryEvent[];
+}
+
 /** One scope/bucket where the serial registry and the balance projection disagree. */
 export interface SerialReconciliationRow {
   productId: string;

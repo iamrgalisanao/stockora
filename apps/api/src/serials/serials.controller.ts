@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Put, Query } from '@nestjs/common';
 import {
   PERMISSIONS,
+  type SerialHistoryResponse,
   type SerialReconciliationResult,
   type SerialResponse,
   type SerialStatus,
@@ -25,8 +26,9 @@ export class SerialsController {
     @Query('lotId') lotId?: string,
     @Query('serialNumber') serialNumber?: string,
     @Query('q') q?: string,
+    @Query('inInventory') inInventory?: string,
   ): Promise<SerialResponse[]> {
-    return this.serials.list(user.organizationId, user, { productId, warehouseId, status, lotId, serialNumber, q });
+    return this.serials.list(user.organizationId, user, { productId, warehouseId, status, lotId, serialNumber, q, inInventory: inInventory === 'true' });
   }
 
   // Literal routes before `:id`.
@@ -59,5 +61,11 @@ export class SerialsController {
   @Get(':id')
   get(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<SerialResponse> {
     return this.serials.get(user.organizationId, user, id);
+  }
+
+  @RequirePermissions(PERMISSIONS.SERIAL_VIEW)
+  @Get(':id/history')
+  history(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<SerialHistoryResponse> {
+    return this.serials.history(user.organizationId, user, id);
   }
 }

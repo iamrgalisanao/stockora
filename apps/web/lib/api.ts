@@ -76,6 +76,7 @@ import type {
   SerialStatus,
   SerialTrackingPolicyResponse,
   SerialReconciliationResult,
+  SerialHistoryResponse,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -280,8 +281,8 @@ export const api = {
       request<ReleaseResponse>(`/releases/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }),
     reject: (id: string, reason: string) =>
       request<ReleaseResponse>(`/releases/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
-    post: (id: string, fefoOverrideReason?: string) =>
-      request<ReleaseResponse>(`/releases/${id}/post`, { method: 'POST', body: JSON.stringify(fefoOverrideReason ? { fefoOverrideReason } : {}) }),
+    post: (id: string, fefoOverrideReason?: string, serials?: Array<{ itemId: string; serialNumbers: string[] }>) =>
+      request<ReleaseResponse>(`/releases/${id}/post`, { method: 'POST', body: JSON.stringify({ ...(fefoOverrideReason ? { fefoOverrideReason } : {}), ...(serials && serials.length ? { serials } : {}) }) }),
     cancel: (id: string) => request<ReleaseResponse>(`/releases/${id}/cancel`, { method: 'POST' }),
   },
 
@@ -294,7 +295,8 @@ export const api = {
     approve: (id: string) => request<TransferResponse>(`/transfers/${id}/approve`, { method: 'POST' }),
     reject: (id: string, reason: string) =>
       request<TransferResponse>(`/transfers/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
-    dispatch: (id: string) => request<TransferResponse>(`/transfers/${id}/dispatch`, { method: 'POST' }),
+    dispatch: (id: string, serials?: Array<{ itemId: string; serialNumbers: string[] }>) =>
+      request<TransferResponse>(`/transfers/${id}/dispatch`, { method: 'POST', body: JSON.stringify(serials && serials.length ? { serials } : {}) }),
     receive: (id: string) => request<TransferResponse>(`/transfers/${id}/receive`, { method: 'POST' }),
     cancel: (id: string) => request<TransferResponse>(`/transfers/${id}/cancel`, { method: 'POST' }),
   },
@@ -619,13 +621,14 @@ export const api = {
   },
 
   serials: {
-    list: (filters: { productId?: string; warehouseId?: string; status?: SerialStatus; lotId?: string; q?: string } = {}) => {
+    list: (filters: { productId?: string; warehouseId?: string; status?: SerialStatus; lotId?: string; q?: string; inInventory?: boolean } = {}) => {
       const p = new URLSearchParams();
-      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
+      for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== '' && v !== false) p.set(k, String(v));
       const qs = p.toString();
       return request<SerialResponse[]>(`/serials${qs ? `?${qs}` : ''}`);
     },
     get: (id: string) => request<SerialResponse>(`/serials/${id}`),
+    history: (id: string) => request<SerialHistoryResponse>(`/serials/${id}/history`),
     reconcile: (productId?: string) =>
       request<SerialReconciliationResult>(`/serials/reconcile${productId ? `?productId=${productId}` : ''}`),
     policy: (productId: string) => request<SerialTrackingPolicyResponse>(`/serials/policies/${productId}`),

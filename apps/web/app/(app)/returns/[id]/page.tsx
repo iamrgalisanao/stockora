@@ -7,6 +7,7 @@ import type {
   DispositionType, ReturnLineResponse, ReturnResponse, ReturnStatus,
 } from '@iw/contracts';
 import { api } from '../../../../lib/api';
+import { SerialPicker } from '../../../../components/SerialPicker';
 
 const badgeClass = (s: ReturnStatus) =>
   s === 'RECEIVED' || s === 'PARTIALLY_DISPOSED' ? 'ok'
@@ -125,6 +126,7 @@ export default function ReturnDetailPage() {
       {drawer && (
         <DispositionDrawer
           line={drawer.line}
+          warehouseId={r.warehouseId}
           outcomes={allowedOutcomes}
           onClose={() => setDrawer(null)}
           onSubmit={async (body, confirmMsg) => {
@@ -167,31 +169,34 @@ function HistoryCard({ r }: { r: ReturnResponse }) {
 }
 
 function DispositionDrawer({
-  line, outcomes, onClose, onSubmit,
+  line, warehouseId, outcomes, onClose, onSubmit,
 }: {
   line: ReturnLineResponse;
+  warehouseId: string;
   outcomes: DispositionType[];
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>, confirmMsg?: string) => Promise<void>;
 }) {
   const [type, setType] = useState<DispositionType>(outcomes[0]!);
   const [quantity, setQuantity] = useState('');
+  const [serials, setSerials] = useState<string[]>([]);
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState<string | null>(null);
   // A client-generated key makes an accidental double-submit a no-op on the server.
   const [idempotencyKey] = useState(() => (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`));
   const remaining = Number(line.remainingQuarantine);
+  const serialized = line.serialNumbers.length > 0; // a serialized line captured serials at intake
 
   function submit() {
     setErr(null);
-    const qty = Number(quantity);
-    if (!(qty > 0)) return setErr('Enter a quantity greater than zero.');
+    const qty = serialized ? serials.length : Number(quantity);
+    if (!(qty > 0)) return setErr(serialized ? 'Select at least one serial to dispose.' : 'Enter a quantity greater than zero.');
     if (qty > remaining) return setErr(`Only ${remaining} remain in quarantine.`);
     const confirmMsg = DESTRUCTIVE.includes(type)
       ? `${LABEL[type]}: ${qty} × ${line.productSku} (${line.productName}).\nThis physically removes stock and cannot be undone. Continue?`
       : undefined;
-    void onSubmit({ lineId: line.id, type, quantity: qty, reason: reason.trim() || undefined, notes: notes.trim() || undefined, idempotencyKey }, confirmMsg);
+    void onSubmit({ lineId: line.id, type, quantity: qty, ...(serialized ? { serialNumbers: serials } : {}), reason: reason.trim() || undefined, notes: notes.trim() || undefined, idempotencyKey }, confirmMsg);
   }
 
   return (
@@ -210,10 +215,17 @@ function DispositionDrawer({
             {outcomes.map((o) => <option key={o} value={o}>{LABEL[o]}{DESTRUCTIVE.includes(o) ? ' (removes stock)' : ''}</option>)}
           </select>
         </div>
-        <div style={{ marginTop: 10 }}>
-          <label>Quantity</label>
-          <input type="number" min="0" max={remaining} step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        </div>
+        {serialized ? (
+          <div style={{ marginTop: 10 }}>
+            <label>Serials to {LABEL[type].toLowerCase()}</label>
+            <SerialPicker mode="select" status="QUARANTINED" productId={line.productId} warehouseId={warehouseId} requiredCount={remaining} value={serials} onChange={setSerials} />
+          </div>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <label>Quantity</label>
+            <input type="number" min="0" max={remaining} step="0.0001" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          </div>
+        )}
         <div style={{ marginTop: 10 }}><label>Reason</label><input value={reason} onChange={(e) => setReason(e.target.value)} /></div>
         <div style={{ marginTop: 10 }}><label>Notes</label><input value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
 
