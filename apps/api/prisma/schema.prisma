@@ -765,6 +765,77 @@ model InventoryBalance {
   @@map("inventory_balances")
 }
 
+// ---------------------------------------------------------------------------
+// FIFO Costing (Phase 2D.5, ADR 0013) — valuation state over the same quantity
+// ledger. Cost layers are per (org, product, variant, warehouse), never per lot.
+// ---------------------------------------------------------------------------
+
+enum CostingStrategy {
+  WAC
+  FIFO
+}
+
+/// Costing-strategy selection (ADR 0013 §2). productId = NIL sentinel is the org default.
+model CostingPolicy {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  productId      String          @default("00000000-0000-0000-0000-000000000000") @map("product_id") @db.Uuid
+  strategy       CostingStrategy @default(WAC)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  @@unique([organizationId, productId])
+  @@map("costing_policies")
+}
+
+enum CostLayerStatus {
+  OPEN
+  DEPLETED
+}
+
+/// One immutable purchase-cost layer opened by an inflow movement (ADR 0013 §1). FIFO consumes these
+/// oldest-first; a lot is not a cost layer.
+model CostLayer {
+  id               String          @id @default(uuid()) @db.Uuid
+  organizationId   String          @map("organization_id") @db.Uuid
+  productId        String          @map("product_id") @db.Uuid
+  variantId        String          @default("00000000-0000-0000-0000-000000000000") @map("variant_id") @db.Uuid
+  warehouseId      String          @map("warehouse_id") @db.Uuid
+  sourceMovementId String          @map("source_movement_id") @db.Uuid
+  receivedQuantity Decimal         @map("received_quantity") @db.Decimal(18, 4)
+  remainingQuantity Decimal        @map("remaining_quantity") @db.Decimal(18, 4)
+  unitCost         Decimal         @map("unit_cost") @db.Decimal(18, 4)
+  receivedAt       DateTime        @map("received_at")
+  status           CostLayerStatus @default(OPEN)
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  consumptions CostLayerConsumption[]
+
+  // FIFO scan order (ADR 0013 §5): received_at ASC, id ASC, restricted to OPEN layers with remaining stock.
+  @@index([organizationId, productId, variantId, warehouseId, status, receivedAt, id])
+  @@index([organizationId, sourceMovementId])
+  @@map("cost_layers")
+}
+
+/// An immutable record of an outbound movement consuming part of a cost layer (ADR 0013 §1, §8).
+model CostLayerConsumption {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  costLayerId       String   @map("cost_layer_id") @db.Uuid
+  outboundMovementId String  @map("outbound_movement_id") @db.Uuid
+  quantity          Decimal  @db.Decimal(18, 4)
+  unitCost          Decimal  @map("unit_cost") @db.Decimal(18, 4)
+  extendedCost      Decimal  @map("extended_cost") @db.Decimal(18, 4)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  costLayer CostLayer @relation(fields: [costLayerId], references: [id])
+
+  @@index([organizationId, outboundMovementId])
+  @@index([costLayerId])
+  @@map("cost_layer_consumptions")
+}
+
 model NumberSequence {
   organizationId String @map("organization_id") @db.Uuid
   key            String

@@ -84,6 +84,10 @@ import type {
   SupplierTrendSeriesResponse,
   SupplierEvidenceResponse,
   EvidenceMetric,
+  CostingPolicyResponse,
+  CostLayerResponse,
+  CostValuationRow,
+  CostingStrategy,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -296,6 +300,21 @@ export const api = {
   supplierWeights: () => request<SupplierAnalyticsPolicyResponse>('/analytics/suppliers/policy'),
   saveSupplierWeights: (w: { fillRate: number; onTime: number; leadTime: number; price: number; quality: number }) =>
     request<SupplierAnalyticsPolicyResponse>('/analytics/suppliers/policy', { method: 'PUT', body: JSON.stringify(w) }),
+  costingPolicy: (productId?: string) => request<CostingPolicyResponse>(`/inventory/costing-policy${productId ? `?productId=${productId}` : ''}`),
+  setCostingPolicy: (strategy: CostingStrategy, productId?: string) =>
+    request<CostingPolicyResponse>('/inventory/costing-policy', { method: 'POST', body: JSON.stringify({ strategy, ...(productId ? { productId } : {}) }) }),
+  costLayers: (filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<CostLayerResponse[]>(`/inventory/cost-layers${qs ? `?${qs}` : ''}`);
+  },
+  costValuation: (filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<CostValuationRow[]>(`/inventory/cost-valuation${qs ? `?${qs}` : ''}`);
+  },
   positions: (filters: Record<string, string> = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);

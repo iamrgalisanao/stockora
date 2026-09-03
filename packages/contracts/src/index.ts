@@ -25,5 +25,6 @@ export * from './lots';
 export * from './shelf-life';
 export * from './cycle-count';
 export * from './serials';
+export * from './costing';
 export * from './outbox';
 export * from './notifications';
