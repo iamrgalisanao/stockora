@@ -235,11 +235,45 @@ async function backfillSystemRolePermissions(permMap: Map<string, string>): Prom
   if (added > 0) console.log(`Backfilled ${added} role-permission link(s) onto existing system roles.`);
 }
 
+/**
+ * One demo login per system role (idempotent) — for browser testing each role. Email is `<roleKey>@demo.test`,
+ * password `password123`, warehouse scope [] (= ALL warehouses) so every role can operate freely. Runs even
+ * when the demo org already exists, so `npm run seed` backfills these onto an existing dev database.
+ */
+async function ensureDemoRoleUsers(): Promise<void> {
+  const org = await prisma.organization.findUnique({ where: { slug: 'demo-trading' } });
+  if (!org) return;
+  const passwordHash = await bcrypt.hash('password123', 12);
+  const created: string[] = [];
+  for (const def of SYSTEM_ROLE_DEFINITIONS) {
+    if (def.key === SYSTEM_ROLES.ADMINISTRATOR) continue; // admin@demo.test already exists
+    const email = `${def.key}@demo.test`;
+    const role = await prisma.role.findFirst({ where: { organizationId: org.id, key: def.key }, select: { id: true } });
+    if (!role) continue;
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: {},
+      create: { email, passwordHash, name: def.name },
+      select: { id: true },
+    });
+    const existing = await prisma.membership.findFirst({ where: { organizationId: org.id, userId: user.id } });
+    if (!existing) {
+      await prisma.membership.create({
+        data: { organizationId: org.id, userId: user.id, roleId: role.id, warehouseScope: [] },
+      });
+      created.push(`${email} (${def.key})`);
+    }
+  }
+  if (created.length > 0) console.log(`Seeded ${created.length} demo role login(s): all password123`);
+  else console.log('Demo role logins already present.');
+}
+
 async function main(): Promise<void> {
   const permissionIdByCode = await ensurePermissionCatalog();
   console.log(`Permission catalog ensured (${permissionIdByCode.size} permissions).`);
   await backfillSystemRolePermissions(permissionIdByCode);
   await seedDemoOrg(permissionIdByCode);
+  await ensureDemoRoleUsers();
   await seedDemoCatalog();
 }
 
