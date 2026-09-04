@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ProductResponse, SupplierResponse, WarehouseResponse } from '@iw/contracts';
@@ -101,12 +103,16 @@ export default function NewReceiptPage() {
       const receipt = await api.receiving.create(body);
       if (post) {
         await api.receiving.post(receipt.id);
+        toast.success(`Receipt ${receipt.receiptNumber} posted`);
         router.push('/inventory');
       } else {
+        toast.success('Draft receipt saved');
         router.push('/receiving');
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      const m = e instanceof Error ? e.message : 'Something went wrong';
+      setError(m);
+      toast.error(m);
       setBusy(false);
     }
   }
