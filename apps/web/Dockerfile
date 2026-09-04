@@ -10,8 +10,13 @@ FROM node:20-slim AS base
 WORKDIR /app
 
 # ---- build ----
+# NOTE: do NOT set NODE_ENV here. `npm ci` installs devDependencies regardless
+# of NODE_ENV (npm 7+ needs an explicit --omit=dev to skip them), and `next
+# build` must run with NODE_ENV unset/production — a leaked NODE_ENV=development
+# makes it mix its dev and prod runtime bundles mid-render, crashing every page
+# with "Cannot read properties of null (reading 'useContext')" during static
+# generation.
 FROM base AS build
-ENV NODE_ENV=development
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 COPY package.json package-lock.json turbo.json tsconfig.base.json ./
