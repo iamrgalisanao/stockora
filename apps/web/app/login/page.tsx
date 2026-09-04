@@ -47,8 +47,13 @@ export default function LoginPage() {
       <div className="card">
         <div style={{ textAlign: 'center', marginBottom: 12 }}>
           <img src="/stockora-logo-light.png" alt="Stockora" style={{ height: 72, width: 'auto', display: 'inline-block' }} />
-          <div className="brand" style={{ fontSize: 24, marginTop: 6 }}>Stockora</div>
-          <div className="muted" style={{ marginTop: 4 }}>
+          <div className="brand" style={{ fontSize: 26, marginTop: 6 }}>
+            <span style={{ color: 'var(--ice)' }}>Stock</span><span style={{ color: 'var(--accent)' }}>ora</span>
+          </div>
+          <div style={{ marginTop: 4, fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--faint)' }}>
+            Warehouse Intelligence <span style={{ color: 'var(--muted)' }}>by Abbadev</span>
+          </div>
+          <div className="muted" style={{ marginTop: 12 }}>
             {mode === 'login' ? 'Sign in to your organization' : 'Register a new organization'}
           </div>
         </div>
