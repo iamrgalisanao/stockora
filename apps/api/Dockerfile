@@ -20,9 +20,12 @@ RUN npm ci
 # Sources needed to build the API and its workspace dependency.
 COPY packages/contracts packages/contracts
 COPY apps/api apps/api
+# The Prisma client MUST be generated before `nest build`: the API's TypeScript
+# imports types (e.g. AdjustmentStatus, Prisma.Decimal) straight off the
+# generated client, so tsc fails with "no exported member" if this runs after.
+RUN npm run prisma:generate -w @iw/api
 # turbo builds @iw/contracts first (dependency), then @iw/api.
 RUN npx turbo run build --filter=@iw/api...
-RUN npm run prisma:generate -w @iw/api
 
 # ---- runtime ----
 FROM base AS runtime
