@@ -52,30 +52,36 @@ command and reports the pending count; device installation ID generated; persist
 capabilities detected (preferred adapter resolves by device); no hydration errors on a clean load. Coverage:
 `apps/api/test/mobile-health.e2e-spec.ts`; web validated by typecheck + production build + live smoke.
 
-### 2D.6B - Mobile Workflows
+### 2D.6B - Mobile Workflows ✅ Shipped
 
 ```text
-scanner-first UI
-receive against known receipt
-pick/release against assigned release
-transfer scanning
-cycle count scanning
-return intake/disposition where ready
-offline worklist snapshots
-shared barcode/lot/serial controls
-task claiming + lease display/takeover
-large scan target
-success/conflict feedback
-duplicate-scan suppression
-continuous scanning
-undo last local scan
-running quantity counter
+shared shell + scanner controls    components/mobile/{WorkflowRunner,ScannerControl,StatusBadge,MobileHeader}
+receive against known receipt       /m/receive  -> RECEIVE (qty + lot/batch + serials, exact-count gate)
+pick/release against a release       /m/pick     -> RELEASE_PICK (serials + cached FEFO, "revalidation required")
+transfer dispatch / receive          /m/transfer -> TRANSFER_DISPATCH / TRANSFER_RECEIVE (no serial substitution)
+cycle/physical count                /m/count    -> COUNT_SUBMIT (qty or observed serials; blind hides target)
+return intake                       /m/return   -> RETURN_RECEIVE
+mobile worklist read models         GET /mobile/work/{receiving,releases,transfers,counts,returns} (scoped, bounded)
+offline worklist snapshots          lib/mobile/worklist.ts (fetch + IndexedDB cache; offline fallback)
+work session (survives restart)     lib/mobile/work-session.ts (IndexedDB v2), distinct from PendingCommand
+one online+offline command path     lib/mobile/submit.ts (SUBMISSION_UNKNOWN retry w/ same key; Web Locks drain)
+task claiming + lease/takeover       POST/DELETE /mobile/work/:type/:id/claim (advisory, never authority)
+duplicate-scan suppression          shared coalescer; exact-count + running counter
+status feedback                     ✓ Synced / ⏳ Pending sync / ⚠ Needs attention
+Pending Sync + Conflicts nav        /m/pending (Sync now), /m/conflicts (placeholder until 2D.6C)
 ```
 
-Definition of done:
+Definition of done — **met**:
 
 > Operators can claim/download bounded warehouse work, scan or manually enter identifiers quickly, and build
 > local command intent for the supported workflows with clear scanned/synced/conflict counts.
+
+Architectural note: online submit and offline capture share ONE command path (`POST /mobile/commands`), which
+in 2D.6B durably ACKNOWLEDGES a command exactly-once by idempotency key but does NOT execute it against
+inventory — execution, revalidation, and conflict resolution are 2D.6C. Verified live: the full offline
+cycle-count scenario (open online → capture → reload restores the session → submit offline shows Pending, not
+success → server inventory unchanged → reconnect + Sync now → Synced), plus `mobile-workflows.e2e-spec.ts`
+(10) for scope/isolation/exclusion/tracking/claim/idempotency/gates/no-mutation.
 
 ### 2D.6C - Offline Command + Conflict Engine
 
