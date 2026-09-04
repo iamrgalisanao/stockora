@@ -175,14 +175,29 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   padding: 6px 10px 20px;
   background: var(--skywash); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.nav-group { color: var(--faint); font-family: var(--f-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; padding: 16px 10px 6px; }
+/* Grouped nav: hairline divider between sections + an accent-coloured group dot,
+   so the seven groups read as distinct colour families (Overview→Admin). */
+.nav-section { display: flex; flex-direction: column; gap: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.nav-section:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.nav-group {
+  color: var(--faint); font-family: var(--f-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.12em; padding: 10px 10px 6px; display: flex; align-items: center; gap: 7px;
+}
+.nav-group::before {
+  content: ""; width: 5px; height: 5px; border-radius: 2px;
+  background: var(--nav-accent); box-shadow: 0 0 9px -1px var(--nav-accent); opacity: .9;
+}
 .nav-link {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 11px; border-radius: 9px; color: var(--muted);
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 11px; border-radius: 9px; color: var(--muted);
   text-decoration: none; font-size: 13.5px; font-weight: 500;
   transition: background .13s, color .13s;
 }
+.nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-ico { width: 17px; height: 17px; flex-shrink: 0; color: var(--nav-accent); opacity: .82; transition: opacity .13s; }
+.nav-badge { margin-left: auto; font-size: 11px; }
 .nav-link:hover { background: var(--wash); color: var(--ice); }
+.nav-link:hover .nav-ico, .nav-link.active .nav-ico { opacity: 1; }
 .nav-link.active { background: var(--accent-tint); color: var(--ice); box-shadow: inset 2px 0 0 var(--accent-hi); }
 .main { padding: 28px 32px; overflow: auto; }
 .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; }
