@@ -50,3 +50,34 @@
 .m-banner.info { background: #0c2740; color: #bae6fd; border-color: #075985; }
 
 .m-caps { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- 2D.6B workflow UI ---- */
+.m-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.m-header-l { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.m-header-r { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.m-header-title { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-link { background: none; border: 0; color: #38bdf8; font-size: 14px; cursor: pointer; padding: 4px 0; text-decoration: none; }
+
+.m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.m-tile { display: block; text-decoration: none; color: inherit; text-align: left; }
+.m-tile-label { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+
+.m-list-head { display: flex; align-items: center; justify-content: space-between; }
+.m-work-row { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; cursor: pointer; color: inherit; }
+.m-work-ref { font-weight: 700; font-size: 15px; }
+.m-chev { color: #64748b; font-size: 22px; }
+.m-claim { color: #fbbf77; font-size: 12px; margin-top: 4px; }
+
+.m-scan-row { display: flex; gap: 8px; }
+.m-input {
+  flex: 1; min-width: 0; background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+  border-radius: 10px; padding: 12px 12px; font-size: 16px; /* 16px avoids iOS zoom */
+}
+.m-input:focus { outline: 2px solid #38bdf8; border-color: #38bdf8; }
+.m-scan-add { width: auto; margin-top: 0; flex-shrink: 0; }
+
+.m-serials { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.m-serial { display: inline-flex; align-items: center; gap: 4px; background: #0b3b34; color: #6ee7b7; border-radius: 8px; padding: 4px 8px; font-size: 13px; font-family: ui-monospace, monospace; }
+.m-serial.bad { background: #4c0519; color: #fda4af; }
+.m-x { background: none; border: 0; color: inherit; font-size: 15px; cursor: pointer; line-height: 1; padding: 0 0 0 2px; }
+.m-line-done { border-color: #275a3a; }

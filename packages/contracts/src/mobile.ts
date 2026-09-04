@@ -23,17 +23,18 @@ export type PendingCommandState =
   | 'CANCELLED'; // discarded locally before it was accepted
 
 /**
- * The command types that 2D.6 will capture offline. Frozen as a union now so the journal schema and the
- * 2D.6B workflows agree on identifiers; server handlers arrive in 2D.6C. Online-only actions
- * (master-data, policy, approvals, costing, imports, user management) are intentionally absent.
+ * The command catalog captured by the 2D.6B scanner workflows. One command per physical action against a
+ * server-backed document. Online-only actions (master-data, policy, approvals, costing, imports, user
+ * management) are intentionally absent — those never happen offline. The server acknowledges these
+ * idempotently in 2D.6B (`POST /mobile/commands`) and executes them against inventory in 2D.6C.
  */
 export type MobileCommandType =
-  | 'RECEIVE_AGAINST_RECEIPT'
-  | 'PICK_FOR_RELEASE'
-  | 'TRANSFER_SCAN'
-  | 'CYCLE_COUNT_OBSERVE'
-  | 'RETURN_INTAKE'
-  | 'RETURN_DISPOSITION';
+  | 'RECEIVE' // receive lines against a known goods receipt
+  | 'RELEASE_PICK' // pick/issue a release line (lot + serials)
+  | 'TRANSFER_DISPATCH' // dispatch a transfer (exact stock identities)
+  | 'TRANSFER_RECEIVE' // receive a transfer (exact dispatched identities, no substitution)
+  | 'COUNT_SUBMIT' // submit a cycle/physical count (quantity or observed serial set)
+  | 'RETURN_RECEIVE'; // receive returned stock into quarantine
 
 /**
  * The offline command envelope (ADR 0014 §3). Every field is set at capture time on the device.
@@ -58,6 +59,164 @@ export interface PendingCommand<TPayload = unknown> {
   idempotencyKey: string; // stable exactly-once key
   capturedAt: string; // ISO timestamp captured on-device
   state: PendingCommandState;
+  /**
+   * SUBMISSION_UNKNOWN (ADR 0014, 2D.6B): the command was sent but the client never saw the response — an
+   * HTTP timeout is NOT a failure. When true, retry with the SAME idempotencyKey; the server returns the
+   * existing receipt if it already processed it. Never mint a new command in this case.
+   */
+  mayHaveReachedServer?: boolean;
+  /** Attempt counter + last transport error, for the queue/retry surface. */
+  attempts?: number;
+  lastError?: string;
+  /** Server receipt once acknowledged (2D.6B intake / 2D.6C apply). */
+  receipt?: MobileCommandReceipt;
+}
+
+/**
+ * Server acknowledgement of a submitted command (2D.6B `POST /mobile/commands`). In 2D.6B a command is
+ * durably RECEIVED (queued for exactly-once apply); it is NOT yet executed against inventory — that, plus
+ * revalidation and conflict resolution, is 2D.6C. Re-submitting the same idempotencyKey returns this same
+ * receipt (ALREADY_PROCESSED), so a timeout-driven retry can never double-apply.
+ */
+export interface MobileCommandReceipt {
+  commandId: string;
+  idempotencyKey: string;
+  outcome: 'RECEIVED' | 'ALREADY_PROCESSED';
+  /** Server-side apply status. 2D.6B leaves this ACKNOWLEDGED; 2D.6C moves it to APPLIED/CONFLICT. */
+  applyStatus: 'ACKNOWLEDGED';
+  receivedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Mobile worklists + work sessions (2D.6B)
+// ---------------------------------------------------------------------------
+
+/** The five scanner-first workflows, and the worklist path segment for each. */
+export type MobileWorkType = 'receiving' | 'releases' | 'transfers' | 'counts' | 'returns';
+
+/** Per-line tracking obligations, so the capture UI knows what identity it must collect before submit. */
+export interface MobileTrackingRequirement {
+  serialized: boolean; // product carries per-unit serials
+  serialCaptureAtReceipt: boolean; // RECEIPT-mode serials are captured during receiving
+  lotTracked: boolean; // batch-tracked product
+  requireLot: boolean; // a lot must be captured before the command is executable
+}
+
+/** A cached lot allocation (advisory FEFO/allocation guidance — server revalidation is authoritative). */
+export interface MobileLotAllocation {
+  lotId: string;
+  lotCode?: string | null;
+  quantity: number;
+  expiryDate?: string | null;
+}
+
+/** One actionable line within a work item, with everything the scanner screen needs and nothing more. */
+export interface MobileWorkLine {
+  lineId: string;
+  productId: string;
+  variantId?: string | null;
+  sku: string;
+  name: string;
+  /** The quantity to work toward (expected to receive / need to pick / dispatched to receive). Omitted for
+   *  a blind count so the target is never shown while counting. */
+  targetQty?: number;
+  uom?: string;
+  tracking: MobileTrackingRequirement;
+  /** Cached eligible serial identities (pick source set, transfer-receive expected set, count expected set).
+   *  Advisory offline; the server is authoritative on sync. */
+  eligibleSerials?: string[];
+  /** Cached advisory allocation (e.g. FEFO suggestion) — labelled "revalidation required" in the UI. */
+  suggestedAllocation?: MobileLotAllocation[];
+}
+
+/** An advisory work claim/lease (ADR 0014 §9). Reduces operator collisions; never a correctness mechanism. */
+export interface MobileWorkClaim {
+  documentId: string;
+  workType: MobileWorkType;
+  claimedById: string;
+  claimedByName: string;
+  deviceId: string;
+  claimedAt: string;
+  leaseExpiresAt: string;
+}
+
+/** A narrow, bounded work item — a server-backed document ready for a mobile action. */
+export interface MobileWorkItem {
+  workType: MobileWorkType;
+  /** Transfers split into two physical actions; other workflows leave this undefined. */
+  subAction?: 'dispatch' | 'receive';
+  documentId: string;
+  reference: string; // human document number (receiptNumber, releaseNumber, …)
+  warehouseId: string;
+  warehouseCode: string;
+  status: string; // document status (e.g. APPROVED, IN_TRANSIT, COUNTING)
+  /** Optimistic-concurrency token (server `updatedAt` epoch ms) captured into the command's expectedVersion. */
+  version: number;
+  blind?: boolean; // counts: expected quantities withheld while counting
+  lines: MobileWorkLine[];
+  claim: MobileWorkClaim | null;
+  updatedAt: string;
+}
+
+/** Local lifecycle of the operator's on-screen work (distinct from the executable PendingCommand). */
+export type MobileWorkSessionState = 'ACTIVE' | 'READY_TO_SUBMIT' | 'SUBMITTED' | 'ABANDONED';
+
+/**
+ * The operator's current screen/work — separate from `PendingCommand`, which is the executable intent. A
+ * session holds in-progress capture (scanned serials, running quantities) so a reload or restart restores
+ * exactly where the operator was. One session may yield one command on submit.
+ */
+export interface MobileWorkSession {
+  sessionId: string;
+  type: MobileWorkType;
+  subAction?: 'dispatch' | 'receive';
+  documentId: string;
+  documentReference: string;
+  documentVersion: number;
+  warehouseId: string;
+  userId: string;
+  downloadedAt: string;
+  claimedBy?: string;
+  claimExpiresAt?: string;
+  state: MobileWorkSessionState;
+  /** Per-line captured progress, keyed by lineId. */
+  localProgress: Record<string, MobileLineProgress>;
+  /** Set once the session produces a command, linking the two. */
+  commandId?: string;
+  updatedAt: string;
+}
+
+/** Captured progress for one line within a session. */
+export interface MobileLineProgress {
+  lineId: string;
+  quantity?: number;
+  serialNumbers?: string[];
+  lotId?: string;
+  lotCode?: string;
+  batchNumber?: string;
+  expiryDate?: string;
+}
+
+// ---- command payloads (one per MobileCommandType) ----
+
+export interface ReceiveCommandPayload {
+  lines: Array<{ lineId: string; quantity: number; lotId?: string; batchNumber?: string; expiryDate?: string; serialNumbers?: string[] }>;
+}
+export interface ReleasePickCommandPayload {
+  lines: Array<{ lineId: string; quantity: number; lotAllocations?: Array<{ lotId: string; quantity: number }>; serialNumbers?: string[] }>;
+}
+export interface TransferDispatchCommandPayload {
+  lines: Array<{ itemId: string; serialNumbers?: string[] }>;
+}
+export interface TransferReceiveCommandPayload {
+  /** Whole-transfer receive; serial identities are validated server-side against the dispatched set. */
+  confirm: true;
+}
+export interface CountSubmitCommandPayload {
+  entries: Array<{ itemId: string; countedQty?: number; observedSerials?: string[] }>;
+}
+export interface ReturnReceiveCommandPayload {
+  lines?: Array<{ lineId: string; receivedQuantity: number }>;
 }
 
 /** Effective connectivity, proven by an authenticated probe rather than assumed from `navigator.onLine`. */

@@ -1897,3 +1897,53 @@ model InventoryPolicy {
   @@index([organizationId, warehouseId])
   @@map("inventory_policies")
 }
+
+// ---------------------------------------------------------------------------
+// Mobile Scanner PWA (Phase 2D.6, ADR 0014)
+// ---------------------------------------------------------------------------
+
+/// An advisory work claim/lease (ADR 0014 §9). Reduces operator collisions on a document; it is NEVER a
+/// correctness mechanism — server command validation and DB locks remain authoritative. One active claim
+/// per (org, workType, document); a supervisor take-over overwrites it.
+model MobileWorkClaim {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  workType       String   @map("work_type") // MobileWorkType
+  documentId     String   @map("document_id") @db.Uuid
+  claimedById    String   @map("claimed_by_id") @db.Uuid
+  deviceId       String   @map("device_id")
+  claimedAt      DateTime @default(now()) @map("claimed_at")
+  leaseExpiresAt DateTime @map("lease_expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizationId, workType, documentId])
+  @@index([organizationId, claimedById])
+  @@map("mobile_work_claims")
+}
+
+/// Server-side intake journal for mobile commands (2D.6B, ADR 0014 §3). A submitted command is durably
+/// RECEIVED here with server-enforced exactly-once on (org, idempotencyKey) — a timeout-driven retry with the
+/// same key returns the existing row, never a second business transaction. 2D.6B only ACKNOWLEDGES; execution
+/// against inventory, revalidation, and conflict resolution are 2D.6C (which will extend applyStatus).
+model MobileCommand {
+  id              String   @id @db.Uuid // client-generated commandId
+  organizationId  String   @map("organization_id") @db.Uuid
+  idempotencyKey  String   @map("idempotency_key")
+  deviceId        String   @map("device_id")
+  userId          String   @map("user_id") @db.Uuid
+  warehouseId     String   @map("warehouse_id") @db.Uuid
+  commandType     String   @map("command_type") // MobileCommandType
+  aggregateId     String?  @map("aggregate_id")
+  expectedVersion BigInt?  @map("expected_version")
+  schemaVersion   Int      @map("schema_version")
+  appVersion      String   @map("app_version")
+  payload         Json
+  applyStatus     String   @default("ACKNOWLEDGED") @map("apply_status")
+  capturedAt      DateTime @map("captured_at")
+  receivedAt      DateTime @default(now()) @map("received_at")
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, warehouseId, applyStatus])
+  @@map("mobile_commands")
+}

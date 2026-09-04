@@ -40,6 +40,7 @@ import { OutboxModule } from './outbox/outbox.module';
 import { ProjectionsModule } from './projections/projections.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SerialsModule } from './serials/serials.module';
+import { MobileModule } from './mobile/mobile.module';
 import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -85,6 +86,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     ProjectionsModule,
     NotificationsModule,
     SerialsModule,
+    MobileModule,
   ],
   controllers: [HealthController],
   providers: [
