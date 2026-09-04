@@ -1,5 +1,8 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
-import { Public } from '../common/decorators';
+import type { MobileHealthResponse } from '@iw/contracts';
+import { CurrentUser, Public } from '../common/decorators';
+import type { RequestUser } from '../common/request-user';
+import { COMMAND_SCHEMA_VERSION, MIN_APP_VERSION } from '../common/mobile.constants';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('health')
@@ -36,5 +39,24 @@ export class HealthController {
       db = 'down';
     }
     return { status: 'ok', db, time: new Date().toISOString() };
+  }
+
+  /**
+   * Mobile connectivity + session probe (2D.6A, ADR 0014 §5, §12). NOT public: reaching it with a 200 proves
+   * both real API reachability AND that the caller's session is still valid. It echoes the scope the server
+   * currently grants, so the client can detect a warehouse-scope or authorization change at reconnect and
+   * revalidate queued work. Deliberately does not touch the database — this is a hot, per-tick probe.
+   */
+  @Get('mobile')
+  mobile(@CurrentUser() user: RequestUser): MobileHealthResponse {
+    return {
+      status: 'ok',
+      serverTime: new Date().toISOString(),
+      userId: user.userId,
+      organizationId: user.organizationId,
+      warehouseScope: user.warehouseScope,
+      minAppVersion: MIN_APP_VERSION,
+      commandSchemaVersion: COMMAND_SCHEMA_VERSION,
+    };
   }
 }

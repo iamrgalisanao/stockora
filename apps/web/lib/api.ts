@@ -138,7 +138,7 @@ export interface CreateReceiptBody {
   }>;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4100';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4100';
 const TOKEN_KEY = 'iw_token';
 const REFRESH_KEY = 'iw_refresh';
 

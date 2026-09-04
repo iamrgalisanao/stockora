@@ -30,10 +30,23 @@ inventory authority.
 reservations, document lifecycle, and FIFO/WAC valuation are decided by server commands inside short,
 deterministic transactions with database constraints and row locks.
 
-**2. Offline scans create commands, not stock mutations.** The device records intent such as "pick these
-serials for release RL-100" or "observe this count set", never "stock = stock - 5".
+**1a. First valid committed transaction wins.** Under concurrency — two devices, or an offline device against
+online activity — the **first command that validates and commits against current server state wins**. Any later
+command touching the same stock, serial, lot, reservation, or document is revalidated against the new committed
+state; if the precondition it captured no longer holds, it conflicts (Decision 6). There is no last-writer-wins,
+no offline priority, and no client-supplied version that can override a committed server fact.
 
-**3. Every queued command has stable identity and versioning.**
+**2. Offline scans create commands, not stock mutations.** The device records intent such as "pick these
+serials for release RL-100" or "observe this count set", never "stock = stock - 5". **Sync always revalidates
+against current server state** — a queued command is applied by re-running full server validation at receive
+time, never blind-replayed from the client's captured view.
+
+**3. Every queued command has stable identity and versioning.** The `idempotencyKey` is generated once when
+the command is captured and is **stable across every retry, app restart, service-worker upgrade, and IndexedDB
+migration**. The server enforces exactly-once on that key, so a command retried any number of times yields at
+most one business transaction (`ALREADY_PROCESSED` on repeats). `expectedVersion?` carries the optimistic
+concurrency token the command was captured against; the server compares it to the current aggregate version to
+detect staleness.
 
 ```text
 PendingCommand
@@ -46,7 +59,7 @@ PendingCommand
 - userId
 - commandType
 - aggregateId?
-- aggregateVersion?
+- expectedVersion?
 - dependsOnCommandId?
 - sequence
 - payload
@@ -86,9 +99,10 @@ ONLINE
 DEGRADED
 ```
 
-**6. Conflicts are explicit and never silently merged.** The default command behavior is atomic: if any part of
-a command conflicts, the command is rejected/conflicted unless that workflow explicitly supports partial
-acceptance.
+**6. Conflicts are explicit and never silently merged or reallocated.** The default command behavior is atomic:
+if any part of a command conflicts, the command is rejected/conflicted unless that workflow explicitly supports
+partial acceptance. The client never auto-picks a different serial, lot, or quantity to make a stale command
+succeed — reallocation is an operator decision surfaced through the conflict UI, never a silent client rewrite.
 
 ```text
 CommandResult = ACCEPTED | ALREADY_PROCESSED | CONFLICT | REJECTED
@@ -186,10 +200,11 @@ ManualAdapter
 Barcode Detection and wake lock are feature-detected enhancements. Hardware wedge and manual entry must always
 remain available. Camera scanning requires HTTPS and explicit user permission.
 
-**11. Local storage is IndexedDB with persistence requested.** Use IndexedDB for command queue, offline worklists,
-reference cache, scanner session state, conflicts, device metadata, receipts, and migrations. Request
-`navigator.storage.persist()` where available, but design for eviction because local browser storage is never an
-inventory system of record.
+**11. Local storage is IndexedDB — a temporary operational journal, not inventory truth.** Use IndexedDB for the
+command queue, offline worklists, reference cache, scanner session state, conflicts, device metadata, receipts,
+and migrations. It records intent awaiting sync and cached read models for display; it is never a system of
+record for stock, and a divergence between IndexedDB and the server is always resolved in the server's favour.
+Request `navigator.storage.persist()` where available, but design for eviction.
 
 **12. Auth is bounded offline and rechecked online.** Do not store refresh tokens in IndexedDB or localStorage.
 The device may keep an offline identity/permission snapshot for a bounded operating window, after which offline

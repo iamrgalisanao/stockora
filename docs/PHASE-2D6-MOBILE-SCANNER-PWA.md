@@ -1,8 +1,12 @@
 # Phase 2D.6 - Mobile Scanner PWA
 
-**Status: Planned.** Final Phase 2D item. Architecture is locked by
+**Status: In progress — 2D.6A shipped.** Final Phase 2D item. Architecture is locked by
 [ADR 0014](adr/0014-mobile-scanner-pwa.md): the mobile PWA is an online-authoritative warehouse client with an
-offline command journal, explicit conflicts, and progressive enhancement for platform features.
+offline command journal, explicit conflicts, and progressive enhancement for platform features. ADR 0014
+explicitly locks the operational rules (server sole authority; first valid committed transaction wins; sync
+always revalidates; conflicts never silently merged/reallocated; stable exactly-once idempotency keys;
+Background Sync as enhancement only; IndexedDB as a temporary journal; bounded/rechecked offline auth; local
+tab vs. cross-device coordination; upgrades never destroy unsynced work; feature-detected scanner fallbacks).
 
 ## Scope
 
@@ -16,29 +20,37 @@ Core rule:
 
 ## Slices
 
-### 2D.6A - PWA + Device Foundation
+### 2D.6A - PWA + Device Foundation ✅ Shipped
 
 ```text
-Web App Manifest
-Workbox/service worker
-installable standalone shell
-offline application shell
-IndexedDB local database
-persistent-storage request
-device installation ID
-connectivity state + authenticated probe
-service-worker update/version UX
-Web Locks sync mutex
-BroadcastChannel coordination
-scanner adapter abstraction
-wake-lock progressive enhancement
+Web App Manifest                       app/manifest.ts -> /manifest.webmanifest (installable, standalone, /m)
+service worker (Workbox strategies)    public/sw.js — precache shell, network-first nav, cache-first static,
+                                       NEVER caches /api/*, activation gated on SKIP_WAITING
+installable standalone shell           app/(mobile) route group + mobile.css
+offline application shell              /m + /offline precached; offline fallback page
+IndexedDB local database              lib/mobile/db.ts — versioned migrations, command/meta/worklist/conflict stores
+persistent-storage request            lib/mobile/device.ts — navigator.storage.persist() + estimate
+device installation ID                lib/mobile/device.ts — generated UUID (never fingerprinted)
+connectivity state + authenticated probe  lib/mobile/connectivity.ts + GET /api/health/mobile (authenticated)
+service-worker update/version UX       lib/mobile/sw-register.ts — update-ready surfaced, activation gated on empty queue
+Web Locks sync mutex                  lib/mobile/sync-lock.ts — one queue drainer per device
+BroadcastChannel coordination         lib/mobile/channel.ts — typed message set
+scanner adapter abstraction           lib/mobile/scanner.ts — capability detection + wedge/manual adapters
+wake-lock progressive enhancement     lib/mobile/wake-lock.ts — feature-detected, auto-reacquire
+command envelope (frozen)             lib/mobile/command.ts + contracts PendingCommand (capture only; sync in 2D.6C)
 ```
 
-Definition of done:
+Definition of done — **met**:
 
 > The app can install as a warehouse PWA, retain a bounded offline shell and local device identity, coordinate
 > one sync worker per device, detect real API connectivity, and expose scanner capability fallbacks without
 > caching sensitive authenticated data.
+
+Verified live: manifest served + installable; SW active with scope `/`; IndexedDB journal writes a QUEUED
+command and reports the pending count; device installation ID generated; persistent storage requested;
+`/health/mobile` proves ONLINE with session identity + scope; Web Locks election acquires/releases; scanner
+capabilities detected (preferred adapter resolves by device); no hydration errors on a clean load. Coverage:
+`apps/api/test/mobile-health.e2e-spec.ts`; web validated by typecheck + production build + live smoke.
 
 ### 2D.6B - Mobile Workflows
 
