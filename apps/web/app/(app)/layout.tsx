@@ -121,8 +121,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     try { return window.localStorage.getItem(LS_COLLAPSED) === '1'; } catch { return false; }
   });
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
-    try { return new Set(JSON.parse(window.localStorage.getItem(LS_GROUPS) || '[]')); } catch { return new Set(); }
+    // Groups start collapsed by default; a stored preference (even []) wins.
+    const allClosed = () => new Set(NAV.map((n) => n.group));
+    if (typeof window === 'undefined') return allClosed();
+    try {
+      const raw = window.localStorage.getItem(LS_GROUPS);
+      return raw == null ? allClosed() : new Set(JSON.parse(raw) as string[]);
+    } catch { return allClosed(); }
   });
 
   const toggleCollapsed = () => setCollapsed((c) => {
