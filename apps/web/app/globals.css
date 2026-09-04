@@ -173,11 +173,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   overflow-y: auto;
   overflow-x: hidden;
 }
-.sidebar .logo { display: flex; align-items: center; gap: 8px; padding: 6px 6px 18px; }
+.sidebar .logo { display: flex; align-items: center; gap: 9px; padding: 4px 6px 18px; }
+.logo-mark { height: 30px; width: auto; flex-shrink: 0; display: block; }
 .logo-text {
   flex: 1; min-width: 0; white-space: nowrap; overflow: hidden;
-  font-family: var(--f-display); font-weight: 600; font-size: 18px; letter-spacing: -0.02em;
-  background: var(--skywash); -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-family: var(--f-display); font-weight: 600; font-size: 20px; letter-spacing: -0.01em; color: var(--ice);
 }
 /* Minimalist rail toggle (chevron) — pinned on the sidebar/content boundary line,
    at the top; collapses the whole sidebar to an icon rail. */

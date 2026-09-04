@@ -174,7 +174,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </button>
       <aside className="sidebar">
         <div className="logo">
-          <span className="logo-text">Inventory Engine</span>
+          <img src="/stockora-logo-light.png" alt="Stockora" className="logo-mark" />
+          <span className="logo-text">Stockora</span>
         </div>
         {NAV.map((g) => {
           const hasActive = g.links.some((l) => pathname === l.href || pathname.startsWith(`${l.href}/`));
