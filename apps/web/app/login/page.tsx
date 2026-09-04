@@ -45,9 +45,12 @@ export default function LoginPage() {
   return (
     <div className="container" style={{ maxWidth: 420, paddingTop: 80 }}>
       <div className="card">
-        <div className="brand" style={{ fontSize: 18 }}>Inventory Control Engine</div>
-        <div className="muted" style={{ marginTop: 4 }}>
-          {mode === 'login' ? 'Sign in to your organization' : 'Register a new organization'}
+        <div style={{ textAlign: 'center', marginBottom: 12 }}>
+          <img src="/stockora-logo-light.png" alt="Stockora" style={{ height: 72, width: 'auto', display: 'inline-block' }} />
+          <div className="brand" style={{ fontSize: 24, marginTop: 6 }}>Stockora</div>
+          <div className="muted" style={{ marginTop: 4 }}>
+            {mode === 'login' ? 'Sign in to your organization' : 'Register a new organization'}
+          </div>
         </div>
 
         <form onSubmit={onSubmit}>
