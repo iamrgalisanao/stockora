@@ -19,3 +19,5 @@ export * from './work-session';
 export * from './worklist';
 export * from './submit';
 export * from './identity';
+export * from './offline-auth';
+export * from './feedback';

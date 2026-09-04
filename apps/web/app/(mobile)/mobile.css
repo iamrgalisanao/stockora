@@ -81,3 +81,14 @@
 .m-serial.bad { background: #4c0519; color: #fda4af; }
 .m-x { background: none; border: 0; color: inherit; font-size: 15px; cursor: pointer; line-height: 1; padding: 0 0 0 2px; }
 .m-line-done { border-color: #275a3a; }
+
+/* ---- 2D.6D warehouse UX hardening: larger, glove-friendly targets ---- */
+.m-btn { min-height: 52px; font-size: 16px; }
+.m-tile { min-height: 84px; }
+.m-work-row { min-height: 64px; }
+.m-input { min-height: 52px; }
+.m-scan-add { min-height: 52px; padding-left: 20px; padding-right: 20px; }
+.m-serial { min-height: 34px; padding: 6px 10px; font-size: 14px; }
+.m-x { min-width: 28px; min-height: 28px; font-size: 18px; }
+/* Bigger tap area on the header pills without changing their look much. */
+.m-header .m-pill { padding: 6px 12px; }

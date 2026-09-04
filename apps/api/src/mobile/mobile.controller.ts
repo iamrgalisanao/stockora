@@ -1,10 +1,11 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { PERMISSIONS } from '@iw/contracts';
-import type { MobileCommandReceipt, MobileWorkClaim, MobileWorkItem, MobileWorkType } from '@iw/contracts';
+import type { MobileCommandReceipt, MobileDiagnostics, MobileWorkClaim, MobileWorkItem, MobileWorkType } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
 import { MobileWorkService } from './mobile-work.service';
 import { MobileCommandService } from './mobile-command.service';
+import { MobileDiagnosticsService } from './mobile-diagnostics.service';
 import { ClaimWorkDto, SubmitCommandDto } from './dto/mobile.dto';
 
 const WORK_TYPES: MobileWorkType[] = ['receiving', 'releases', 'transfers', 'counts', 'returns'];
@@ -20,7 +21,11 @@ function parseWorkType(raw: string): MobileWorkType {
  */
 @Controller('mobile')
 export class MobileController {
-  constructor(private readonly work: MobileWorkService, private readonly commands: MobileCommandService) {}
+  constructor(
+    private readonly work: MobileWorkService,
+    private readonly commands: MobileCommandService,
+    private readonly diagnostics: MobileDiagnosticsService,
+  ) {}
 
   @RequirePermissions(PERMISSIONS.INVENTORY_RECEIVE)
   @Get('work/receiving')
@@ -67,5 +72,12 @@ export class MobileController {
   @Post('commands')
   submit(@CurrentUser() user: RequestUser, @Body() dto: SubmitCommandDto): Promise<MobileCommandReceipt> {
     return this.commands.submit(user, dto);
+  }
+
+  // Support/telemetry — org-scoped mobile sync health (2D.6D). Admin/manager read.
+  @RequirePermissions(PERMISSIONS.AUDIT_VIEW)
+  @Get('diagnostics')
+  diagnosticsSummary(@CurrentUser() user: RequestUser): Promise<MobileDiagnostics> {
+    return this.diagnostics.summary(user);
   }
 }
