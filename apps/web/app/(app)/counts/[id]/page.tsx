@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { AuthenticatedUser, CountResponse } from '@iw/contracts';
@@ -35,8 +37,11 @@ export default function CountDetailPage() {
       const c = await fn();
       setCount(c);
       setEntries(Object.fromEntries(c.items.map((i) => [i.id, i.countedQty ?? ''])));
+      toast.success(c.status === 'COUNTING' ? 'Counts saved' : `Count ${c.status.replace(/_/g, ' ').toLowerCase()}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed');
+      const m = e instanceof Error ? e.message : 'Action failed';
+      setError(m);
+      toast.error(m);
     } finally {
       setBusy(false);
     }

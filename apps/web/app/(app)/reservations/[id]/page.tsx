@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -32,8 +34,11 @@ export default function ReservationDetailPage() {
     try {
       const updated = await api.reservations[action](id);
       setR(updated);
+      toast.success(`Reservation ${action === 'confirm' ? 'confirmed' : action === 'release' ? 'released' : 'cancelled'}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : `Failed to ${action}`);
+      const m = e instanceof Error ? e.message : `Failed to ${action}`;
+      setError(m);
+      toast.error(m);
     } finally {
       setBusy(false);
     }

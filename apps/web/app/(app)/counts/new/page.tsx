@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { COUNT_TYPES, type CountType, type WarehouseResponse } from '@iw/contracts';
@@ -32,9 +34,12 @@ export default function NewCountPage() {
     setBusy(true);
     try {
       const count = await api.counts.create({ warehouseId, type, isBlind, notes: notes || undefined });
+      toast.success(`Count ${count.countNumber} created`);
       router.push(`/counts/${count.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      const m = e instanceof Error ? e.message : 'Something went wrong';
+      setError(m);
+      toast.error(m);
       setBusy(false);
     }
   }
