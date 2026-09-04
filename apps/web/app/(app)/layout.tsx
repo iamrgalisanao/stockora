@@ -156,20 +156,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="shell" data-collapsed={collapsed || undefined}>
+      <button
+        type="button"
+        className="rail-toggle"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14.5 7l-5 5 5 5" />
+        </svg>
+      </button>
       <aside className="sidebar">
         <div className="logo">
           <span className="logo-text">Inventory Engine</span>
-          <button
-            type="button"
-            className="rail-toggle"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M15 6l-6 6 6 6" />
-            </svg>
-          </button>
         </div>
         {NAV.map((g) => {
           const hasActive = g.links.some((l) => pathname === l.href || pathname.startsWith(`${l.href}/`));
