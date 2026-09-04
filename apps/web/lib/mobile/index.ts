@@ -15,3 +15,7 @@ export * from './scanner';
 export * from './wake-lock';
 export * from './command';
 export * from './sw-register';
+export * from './work-session';
+export * from './worklist';
+export * from './submit';
+export * from './identity';

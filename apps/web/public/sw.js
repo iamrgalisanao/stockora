@@ -13,7 +13,7 @@
  *    queue is empty — so an app upgrade cannot discard unsynced work (§14).
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const SHELL_CACHE = `iw-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `iw-static-${CACHE_VERSION}`;
 

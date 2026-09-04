@@ -8,4 +8,4 @@
 export const COMMAND_SCHEMA_VERSION = 1;
 
 /** Service-worker + app-shell cache generation. Bump to invalidate old shells on deploy. */
-export const SHELL_CACHE_VERSION = 'v1';
+export const SHELL_CACHE_VERSION = 'v2';

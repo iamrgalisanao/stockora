@@ -77,6 +77,9 @@ import type {
   SerialTrackingPolicyResponse,
   SerialReconciliationResult,
   SerialHistoryResponse,
+  MobileWorkItem,
+  MobileWorkClaim,
+  MobileWorkType,
   SupplierPerformanceResponse,
   SupplierAnalyticsPolicyResponse,
   SupplierScorecardResponse,
@@ -709,6 +712,16 @@ export const api = {
     policy: (productId: string) => request<SerialTrackingPolicyResponse>(`/serials/policies/${productId}`),
     savePolicy: (productId: string, body: { captureMode: 'RECEIPT' | 'ISSUE'; requireLotWhenBatchTracked?: boolean }) =>
       request<SerialTrackingPolicyResponse>(`/serials/policies/${productId}`, { method: 'PUT', body: JSON.stringify(body) }),
+  },
+
+  // Mobile Scanner PWA (2D.6B). Worklists + advisory claims; command submit lives in lib/mobile/submit.ts
+  // because it needs bespoke timeout / SUBMISSION_UNKNOWN handling the generic request() can't express.
+  mobile: {
+    work: (type: MobileWorkType) => request<MobileWorkItem[]>(`/mobile/work/${type}`),
+    claim: (type: MobileWorkType, id: string, deviceId: string, leaseSeconds?: number) =>
+      request<MobileWorkClaim>(`/mobile/work/${type}/${id}/claim`, { method: 'POST', body: JSON.stringify({ deviceId, ...(leaseSeconds ? { leaseSeconds } : {}) }) }),
+    releaseClaim: (type: MobileWorkType, id: string) =>
+      request<void>(`/mobile/work/${type}/${id}/claim`, { method: 'DELETE' }),
   },
 };
 

@@ -10,13 +10,14 @@
 
 export const DB_NAME = 'iw-mobile';
 /** Bump this AND add a migration step below whenever the object-store shape changes. */
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const STORES = {
   meta: 'meta', // device id, install/session snapshots — key: string
   commands: 'commands', // PendingCommand journal — key: commandId
-  worklists: 'worklists', // OfflineWorkItem read models (2D.6B) — key: aggregateId
+  worklists: 'worklists', // cached MobileWorkItem read models (2D.6B) — key: `${workType}:${documentId}`
   conflicts: 'conflicts', // surfaced conflicts (2D.6C) — key: commandId
+  sessions: 'sessions', // MobileWorkSession — the operator's in-progress work (2D.6B) — key: sessionId
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -36,10 +37,21 @@ function migrate(db: IDBDatabase, oldVersion: number): void {
     commands.createIndex('by_state', 'state', { unique: false });
     commands.createIndex('by_idempotencyKey', 'idempotencyKey', { unique: true });
     commands.createIndex('by_aggregate', 'aggregateId', { unique: false });
-    db.createObjectStore(STORES.worklists, { keyPath: 'aggregateId' });
+    db.createObjectStore(STORES.worklists, { keyPath: 'cacheKey' });
     db.createObjectStore(STORES.conflicts, { keyPath: 'commandId' });
   }
-  // if (oldVersion < 2) { …future migrations, additive… }
+  if (oldVersion < 2) {
+    // Sessions arrived in 2D.6B. Additive — never drops the command journal, so unsynced work survives (§14).
+    const sessions = db.createObjectStore(STORES.sessions, { keyPath: 'sessionId' });
+    sessions.createIndex('by_document', 'documentId', { unique: false });
+    sessions.createIndex('by_state', 'state', { unique: false });
+    // A v1 install created `worklists` keyed by the (unused) `aggregateId`; re-key it to `cacheKey`. The
+    // worklist cache is a derived read model — never unsynced work — so recreating it loses nothing.
+    if (oldVersion === 1 && db.objectStoreNames.contains(STORES.worklists)) {
+      db.deleteObjectStore(STORES.worklists);
+      db.createObjectStore(STORES.worklists, { keyPath: 'cacheKey' });
+    }
+  }
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
