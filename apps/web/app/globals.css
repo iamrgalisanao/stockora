@@ -174,12 +174,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   overflow-x: hidden;
 }
 .sidebar .logo { display: flex; align-items: center; gap: 9px; padding: 4px 6px 18px; }
-.logo-mark { height: 30px; width: auto; flex-shrink: 0; display: block; }
+.logo-mark { height: 36px; width: auto; flex-shrink: 0; display: block; }
+.logo-wm { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .logo-text {
-  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden;
-  font-family: var(--f-display); font-weight: 600; font-size: 20px; letter-spacing: -0.01em; color: var(--ice);
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.05;
+  font-family: var(--f-display); font-weight: 600; font-size: 19px; letter-spacing: -0.01em; color: var(--ice);
 }
 .logo-text .lg-ora { color: var(--accent); }
+.logo-tag {
+  font-family: var(--f-mono); font-size: 8px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--faint); line-height: 1.2;
+}
 /* Minimalist rail toggle (chevron) — pinned on the sidebar/content boundary line,
    at the top; collapses the whole sidebar to an icon rail. */
 .rail-toggle {
@@ -244,7 +249,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 /* ---- Rail (collapsed) mode ---- */
 .shell[data-collapsed] .sidebar { padding: 20px 12px; }
 .shell[data-collapsed] .sidebar .logo { justify-content: center; padding: 6px 0 18px; }
-.shell[data-collapsed] .logo-text,
+.shell[data-collapsed] .logo-wm,
 .shell[data-collapsed] .nav-group-label,
 .shell[data-collapsed] .nav-chevron,
 .shell[data-collapsed] .nav-label,
