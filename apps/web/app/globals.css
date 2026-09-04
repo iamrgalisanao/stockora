@@ -157,7 +157,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 .kv .v { font-size: 15px; color: var(--ice); margin-top: 2px; }
 
 /* ---- App shell ---- */
-.shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; transition: grid-template-columns .22s var(--ease-drawer, cubic-bezier(0.32,0.72,0,1)); }
+.shell[data-collapsed] { grid-template-columns: 74px 1fr; }
 .sidebar {
   background: linear-gradient(180deg, #0a0d17, #070911);
   border-right: 1px solid var(--border);
@@ -169,36 +170,82 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  overflow-x: hidden;
 }
-.sidebar .logo {
+.sidebar .logo { display: flex; align-items: center; gap: 8px; padding: 6px 6px 18px; }
+.logo-text {
+  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden;
   font-family: var(--f-display); font-weight: 600; font-size: 18px; letter-spacing: -0.02em;
-  padding: 6px 10px 20px;
   background: var(--skywash); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-/* Grouped nav: hairline divider between sections + an accent-coloured group dot,
-   so the seven groups read as distinct colour families (Overview→Admin). */
+/* Minimalist rail toggle (chevron) — collapses the whole sidebar to an icon rail. */
+.rail-toggle {
+  appearance: none; flex-shrink: 0; width: 26px; height: 26px; border-radius: 999px;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--wash); border: 1px solid var(--border); color: var(--muted);
+  transition: background .13s, color .13s, transform .13s;
+}
+.rail-toggle:hover { background: var(--wash-2); color: var(--ice); border-color: var(--border-strong); }
+.rail-toggle:active { transform: scale(0.92); }
+.rail-toggle svg { width: 14px; height: 14px; transition: transform .2s var(--ease-out, cubic-bezier(0.23,1,0.32,1)); }
+.shell[data-collapsed] .rail-toggle svg { transform: rotate(180deg); }
+
+/* Grouped nav: hairline divider between sections + a collapsible accent header. */
 .nav-section { display: flex; flex-direction: column; gap: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .nav-section:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
 .nav-group {
+  appearance: none; width: 100%; background: none; border: 0; cursor: pointer; text-align: left;
   color: var(--faint); font-family: var(--f-mono); font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.12em; padding: 10px 10px 6px; display: flex; align-items: center; gap: 7px;
+  transition: color .13s;
 }
+.nav-group:hover { color: var(--muted); }
 .nav-group::before {
-  content: ""; width: 5px; height: 5px; border-radius: 2px;
+  content: ""; width: 5px; height: 5px; border-radius: 2px; flex-shrink: 0;
   background: var(--nav-accent); box-shadow: 0 0 9px -1px var(--nav-accent); opacity: .9;
 }
+.nav-group-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-chevron { width: 12px; height: 12px; flex-shrink: 0; color: var(--faint); transition: transform .16s var(--ease-out, cubic-bezier(0.23,1,0.32,1)); }
+.nav-group[aria-expanded="true"] .nav-chevron { transform: rotate(90deg); }
+
 .nav-link {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 11px; border-radius: 9px; color: var(--muted);
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 5px 9px; border-radius: 10px; color: var(--muted);
   text-decoration: none; font-size: 13.5px; font-weight: 500;
   transition: background .13s, color .13s;
 }
 .nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-ico { width: 17px; height: 17px; flex-shrink: 0; color: var(--nav-accent); opacity: .82; transition: opacity .13s; }
+/* Filled accent tile per row (glyph in the group hue). */
+.nav-tile {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
+  color: var(--nav-accent);
+  background: color-mix(in srgb, var(--nav-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nav-accent) 26%, transparent);
+  box-shadow: 0 4px 12px -9px var(--nav-accent);
+  transition: background .13s, border-color .13s, color .13s, box-shadow .13s;
+}
+.nav-glyph { width: 16px; height: 16px; }
 .nav-badge { margin-left: auto; font-size: 11px; }
 .nav-link:hover { background: var(--wash); color: var(--ice); }
-.nav-link:hover .nav-ico, .nav-link.active .nav-ico { opacity: 1; }
+.nav-link:hover .nav-tile { background: color-mix(in srgb, var(--nav-accent) 22%, transparent); border-color: color-mix(in srgb, var(--nav-accent) 40%, transparent); }
 .nav-link.active { background: var(--accent-tint); color: var(--ice); box-shadow: inset 2px 0 0 var(--accent-hi); }
+.nav-link.active .nav-tile { background: var(--nav-accent); border-color: transparent; color: #0a0d17; box-shadow: 0 6px 16px -8px var(--nav-accent); }
+
+/* Sign out — icon + label, label hidden in rail mode. */
+.signout { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.signout-ico { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* ---- Rail (collapsed) mode ---- */
+.shell[data-collapsed] .sidebar { padding: 20px 12px; }
+.shell[data-collapsed] .sidebar .logo { justify-content: center; padding: 6px 0 18px; }
+.shell[data-collapsed] .logo-text,
+.shell[data-collapsed] .nav-group-label,
+.shell[data-collapsed] .nav-chevron,
+.shell[data-collapsed] .nav-label,
+.shell[data-collapsed] .signout-label { display: none; }
+.shell[data-collapsed] .nav-group { justify-content: center; padding: 10px 0 4px; cursor: default; }
+.shell[data-collapsed] .nav-link { justify-content: center; padding: 5px; }
+.shell[data-collapsed] .nav-badge { position: absolute; top: 0; right: 4px; margin: 0; padding: 1px 5px; }
 .main { padding: 28px 32px; overflow: auto; }
 .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; }
 .h1 { font-family: var(--f-display); font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0; color: var(--ice); }

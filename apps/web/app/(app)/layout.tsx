@@ -98,17 +98,44 @@ const ICONS: Record<string, string> = {
 
 function NavIcon({ name }: { name: string }) {
   return (
-    <svg className="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-      dangerouslySetInnerHTML={{ __html: ICONS[name] ?? '' }} />
+    <span className="nav-tile">
+      <svg className="nav-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: ICONS[name] ?? '' }} />
+    </span>
   );
 }
+
+const LS_COLLAPSED = 'iw.sidebar.collapsed';
+const LS_GROUPS = 'iw.sidebar.closedGroups';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [unread, setUnread] = useState(0);
+  // Sidebar layout prefs — read synchronously on the client (render is gated on
+  // `ready`, so there is no SSR/hydration mismatch) and persisted to localStorage.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return window.localStorage.getItem(LS_COLLAPSED) === '1'; } catch { return false; }
+  });
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try { return new Set(JSON.parse(window.localStorage.getItem(LS_GROUPS) || '[]')); } catch { return new Set(); }
+  });
+
+  const toggleCollapsed = () => setCollapsed((c) => {
+    const next = !c;
+    try { window.localStorage.setItem(LS_COLLAPSED, next ? '1' : '0'); } catch { /* private mode */ }
+    return next;
+  });
+  const toggleGroup = (g: string) => setClosedGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(g)) next.delete(g); else next.add(g);
+    try { window.localStorage.setItem(LS_GROUPS, JSON.stringify([...next])); } catch { /* private mode */ }
+    return next;
+  });
 
   useEffect(() => {
     if (!getToken()) router.replace('/login');
@@ -128,37 +155,67 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   if (!ready) return null;
 
   return (
-    <div className="shell">
+    <div className="shell" data-collapsed={collapsed || undefined}>
       <aside className="sidebar">
-        <div className="logo">Inventory Engine</div>
-        {NAV.map((g) => (
-          <div key={g.group} className="nav-section" style={{ ['--nav-accent' as string]: g.accent }}>
-            <div className="nav-group">{g.group}</div>
-            {g.links.map((l) => {
-              const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
-              return (
-                <Link key={l.href} href={l.href} className={`nav-link ${active ? 'active' : ''}`}>
-                  <NavIcon name={l.icon} />
-                  <span className="nav-label">{l.label}</span>
-                  {l.href === '/notifications' && unread > 0 && (
-                    <span className="badge danger nav-badge">{unread}</span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+        <div className="logo">
+          <span className="logo-text">Inventory Engine</span>
+          <button
+            type="button"
+            className="rail-toggle"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15 6l-6 6 6 6" />
+            </svg>
+          </button>
+        </div>
+        {NAV.map((g) => {
+          const hasActive = g.links.some((l) => pathname === l.href || pathname.startsWith(`${l.href}/`));
+          const open = collapsed || !closedGroups.has(g.group) || hasActive;
+          return (
+            <div key={g.group} className="nav-section" style={{ ['--nav-accent' as string]: g.accent }}>
+              <button type="button" className="nav-group" aria-expanded={open} onClick={() => toggleGroup(g.group)} title={g.group}>
+                <span className="nav-group-label">{g.group}</span>
+                <svg className="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
+              </button>
+              {open && g.links.map((l) => {
+                const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
+                return (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className={`nav-link ${active ? 'active' : ''}`}
+                    title={collapsed ? l.label : undefined}
+                  >
+                    <NavIcon name={l.icon} />
+                    <span className="nav-label">{l.label}</span>
+                    {l.href === '/notifications' && unread > 0 && (
+                      <span className="badge danger nav-badge">{unread}</span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          );
+        })}
         <div style={{ marginTop: 'auto' }}>
           <button
-            className="btn secondary"
-            style={{ width: '100%' }}
+            className="btn secondary signout"
             onClick={async () => {
               try { await api.logout(); } catch { /* revoke best-effort */ }
               clearToken();
               router.replace('/login');
             }}
+            title="Sign out"
           >
-            Sign out
+            <svg className="signout-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15 12H4" /><path d="m8 8-4 4 4 4" /><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" />
+            </svg>
+            <span className="signout-label">Sign out</span>
           </button>
         </div>
       </aside>
