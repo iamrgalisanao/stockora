@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type {
@@ -26,7 +28,7 @@ export default function SupplierEditorPage() {
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true); setError(null);
-    try { await fn(); reload(); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); } finally { setBusy(false); }
+    try { await fn(); toast.success('Saved'); reload(); } catch (e) { const m = e instanceof Error ? e.message : 'Action failed'; setError(m); toast.error(m); } finally { setBusy(false); }
   }
   async function changeStatus(status: EntityStatus) {
     if (status === 'ARCHIVED' && !window.confirm('Archive this supplier? It must not be preferred anywhere or on an open receipt.')) return;
@@ -133,7 +135,7 @@ function CatalogTab({ supplierId }: { supplierId: string }) {
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true); setError(null);
-    try { await fn(); reload(); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); } finally { setBusy(false); }
+    try { await fn(); toast.success('Saved'); reload(); } catch (e) { const m = e instanceof Error ? e.message : 'Action failed'; setError(m); toast.error(m); } finally { setBusy(false); }
   }
   function add() {
     if (!productId) return setError('Select a product');

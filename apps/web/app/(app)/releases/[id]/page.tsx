@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { AuthenticatedUser, ProductResponse, ReleaseResponse, SerialCaptureMode } from '@iw/contracts';
@@ -44,7 +46,7 @@ export default function ReleaseDetailPage() {
   async function act(fn: () => Promise<ReleaseResponse>) {
     setBusy(true);
     setError(null);
-    try { setRelease(await fn()); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); } finally { setBusy(false); }
+    try { const res = await fn(); setRelease(res); toast.success(`Release ${res.status.replace(/_/g, ' ').toLowerCase()}`); } catch (e) { const m = e instanceof Error ? e.message : 'Action failed'; setError(m); toast.error(m); } finally { setBusy(false); }
   }
 
   // Posting a batch release surfaces two FEFO paths explicitly (ADR 0008): a non-FEFO lot selection needs
@@ -55,6 +57,7 @@ export default function ReleaseDetailPage() {
     const serials = serialItems.map((i) => ({ itemId: i.id, serialNumbers: serialSel[i.id] ?? [] }));
     try {
       setRelease(await api.releases.post(id, reason, serials));
+      toast.success('Release posted');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Action failed';
       if (/reason is required to override FEFO/i.test(msg)) {
@@ -65,6 +68,7 @@ export default function ReleaseDetailPage() {
         setError('Stock changed since this allocation was generated. Refresh the FEFO plan and try again.');
       } else {
         setError(msg);
+        toast.error(msg);
       }
     } finally {
       setBusy(false);

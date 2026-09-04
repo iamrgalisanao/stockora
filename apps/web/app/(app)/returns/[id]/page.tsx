@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -48,7 +50,7 @@ export default function ReturnDetailPage() {
   async function run(fn: () => Promise<ReturnResponse>, confirmMsg?: string) {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setBusy(true); setError(null);
-    try { setR(await fn()); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); }
+    try { const res = await fn(); setR(res); toast.success(`Return ${res.status.replace(/_/g, ' ').toLowerCase()}`); } catch (e) { const m = e instanceof Error ? e.message : 'Action failed'; setError(m); toast.error(m); }
     finally { setBusy(false); }
   }
 
@@ -178,6 +180,12 @@ function DispositionDrawer({
   onSubmit: (body: Record<string, unknown>, confirmMsg?: string) => Promise<void>;
 }) {
   const [type, setType] = useState<DispositionType>(outcomes[0]!);
+  const [closing, setClosing] = useState(false);
+  const close = () => {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { onClose(); return; }
+    setClosing(true);
+    window.setTimeout(onClose, 300);
+  };
   const [quantity, setQuantity] = useState('');
   const [serials, setSerials] = useState<string[]>([]);
   const [reason, setReason] = useState('');
@@ -201,9 +209,9 @@ function DispositionDrawer({
 
   return (
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <div className="drawer">
-        <div className="topbar"><h2 className="h1" style={{ fontSize: 18 }}>Disposition</h2><button className="btn secondary small" style={{ marginTop: 0 }} onClick={onClose}>✕</button></div>
+      <div className="drawer-backdrop" data-closing={closing || undefined} onClick={close} />
+      <div className="drawer" data-closing={closing || undefined}>
+        <div className="topbar"><h2 className="h1" style={{ fontSize: 18 }}>Disposition</h2><button className="btn secondary small" style={{ marginTop: 0 }} onClick={close}>✕</button></div>
         <p className="muted" style={{ marginTop: 0 }}>{line.productSku} — {line.productName}</p>
         <div className="kv"><div className="k">Remaining in quarantine</div><div className="v"><strong>{line.remainingQuarantine}</strong></div></div>
 
@@ -231,7 +239,7 @@ function DispositionDrawer({
 
         <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
           <button className="btn" onClick={submit}>Post disposition</button>
-          <button className="btn secondary" onClick={onClose}>Cancel</button>
+          <button className="btn secondary" onClick={close}>Cancel</button>
         </div>
       </div>
     </>

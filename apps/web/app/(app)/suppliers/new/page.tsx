@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../../lib/api';
@@ -34,9 +36,12 @@ export default function NewSupplierPage() {
         isPreferred: f.isPreferred,
         notes: f.notes || undefined,
       });
+      toast.success(`Supplier ${created.code} created`);
       router.push(`/suppliers/${created.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      const m = e instanceof Error ? e.message : 'Save failed';
+      setError(m);
+      toast.error(m);
       setBusy(false);
     }
   }

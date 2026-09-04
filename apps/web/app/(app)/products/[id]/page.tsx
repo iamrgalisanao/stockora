@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type {
@@ -33,7 +35,7 @@ export default function ProductEditorPage() {
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true); setError(null);
-    try { await fn(); reload(); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); } finally { setBusy(false); }
+    try { await fn(); toast.success('Saved'); reload(); } catch (e) { const m = e instanceof Error ? e.message : 'Action failed'; setError(m); toast.error(m); } finally { setBusy(false); }
   }
   async function changeStatus(status: EntityStatus) {
     if (status === 'ARCHIVED' && !window.confirm('Archive this product? It must have no stock or open documents.')) return;
@@ -209,7 +211,7 @@ function PoliciesTab({ productId, p }: { productId: string; p: ProductResponse }
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true); setError(null);
-    try { await fn(); reload(); } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); } finally { setBusy(false); }
+    try { await fn(); toast.success('Saved'); reload(); } catch (e) { const m = e instanceof Error ? e.message : 'Action failed'; setError(m); toast.error(m); } finally { setBusy(false); }
   }
   function create() {
     if (!warehouseId) return setError('Select a warehouse');

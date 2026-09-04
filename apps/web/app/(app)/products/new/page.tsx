@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BrandResponse, CategoryResponse, UnitResponse } from '@iw/contracts';
@@ -39,9 +41,12 @@ export default function NewProductPage() {
         description: f.description || undefined,
         trackInventory: f.trackInventory, isSerialized: f.isSerialized, isBatchTracked: f.isBatchTracked,
       });
+      toast.success(`Product ${created.sku} created`);
       router.push(`/products/${created.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      const m = e instanceof Error ? e.message : 'Save failed';
+      setError(m);
+      toast.error(m);
       setBusy(false);
     }
   }

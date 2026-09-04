@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { AuthenticatedUser, ProductResponse, TransferResponse } from '@iw/contracts';
@@ -42,9 +44,13 @@ export default function TransferDetailPage() {
     setBusy(true);
     setError(null);
     try {
-      setTransfer(await fn());
+      const res = await fn();
+      setTransfer(res);
+      toast.success(`Transfer ${res.status.replace(/_/g, ' ').toLowerCase()}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed');
+      const m = e instanceof Error ? e.message : 'Action failed';
+      setError(m);
+      toast.error(m);
     } finally {
       setBusy(false);
     }
