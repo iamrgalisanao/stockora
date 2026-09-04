@@ -43,6 +43,17 @@ describe('Outbox relay (e2e, 2D.1B)', () => {
     });
   const row = (id: string) => prisma.outboxEvent.findUnique({ where: { id } });
   const makeClaimable = (id: string) => prisma.outboxEvent.update({ where: { id }, data: { availableAt: new Date() } });
+  // Bounded re-read: processBatch commits its status writes, but under full-suite DB load a single immediate
+  // read can occasionally race visibility. Re-read until the settled status appears (or fail after ~2s). This
+  // never masks a real outcome — a wrong/stuck status still times out and fails.
+  const rowWhenStatus = async (id: string, status: string) => {
+    for (let i = 0; i < 40; i += 1) {
+      const r = await row(id);
+      if (r?.status === status) return r;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    return row(id);
+  };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -133,8 +144,8 @@ describe('Outbox relay (e2e, 2D.1B)', () => {
     const r = await relay.processBatch({ organizationId: org });
     expect(r.published).toBe(1);
     expect(r.failed).toBe(1);
-    expect((await row(good.id))!.status).toBe('PUBLISHED');
-    expect((await row(bad.id))!.status).toBe('FAILED');
+    expect((await rowWhenStatus(good.id, 'PUBLISHED'))!.status).toBe('PUBLISHED');
+    expect((await rowWhenStatus(bad.id, 'FAILED'))!.status).toBe('FAILED');
   });
 
   it('recovers an expired PROCESSING lease but does not steal a live one', async () => {

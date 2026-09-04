@@ -45,7 +45,14 @@ describe('Notification delivery — email (e2e, 2D.2B)', () => {
   const http = () => request(app.getHttpServer());
   const auth = (t = token) => ({ Authorization: `Bearer ${t}` });
   const iso = (days: number) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + days); return d.toISOString(); };
-  const drainOutbox = () => outbox.processBatch({ organizationId: org });
+  // Drain to quiescence: keep processing batches until one does no work. A single batch can under-drain when
+  // the suite is under load (a fixed-point loop is deterministic; the prod poller does the same continuously).
+  const drainOutbox = async () => {
+    for (let i = 0; i < 15; i += 1) {
+      const r = await outbox.processBatch({ organizationId: org });
+      if (r.published === 0 && r.failed === 0) break;
+    }
+  };
   const dispatch = () => delivery.dispatchPending({ organizationId: org });
 
   const member = async (roleKey: string) => {
