@@ -269,3 +269,23 @@ table.grid td.num, table.grid th.num { text-align: right; font-family: var(--f-m
 .mv { font-family: var(--f-mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--wash); color: var(--muted); }
 .mv.in { color: var(--accent-2); background: rgba(38,150,132,.14); }
 .mv.out { color: var(--danger); background: rgba(228,109,76,.14); }
+
+/* ---- List pages: shared toolbar, search, filter chips, empty state ---- */
+.toolbar { margin-bottom: 16px; row-gap: 8px; }
+/* Toolbar search / select fields → compact pills with a leading magnifier */
+.toolbar input, .toolbar select {
+  width: auto; min-width: 200px; max-width: 300px; margin-top: 0;
+  padding: 8px 14px 8px 34px; border-radius: 999px; font-size: 13px; background-color: var(--panel-2);
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='16'%20height='16'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%2374809a'%20stroke-width='2'%20stroke-linecap='round'%3E%3Ccircle%20cx='11'%20cy='11'%20r='7'/%3E%3Cpath%20d='m21%2021-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 12px center; background-size: 15px;
+}
+.toolbar select { padding-left: 14px; background-image: none; }
+.toolbar .btn.small, .toolbar button.small { margin-top: 0; }
+/* a right-aligned result count / meta slot in a toolbar */
+.toolbar .count { margin-left: auto; font-family: var(--f-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+
+/* Empty / loading placeholder — reads as a considered empty state, not a bare card */
+.card.muted {
+  border-style: dashed; border-color: var(--border); background: #090c16; box-shadow: none;
+  color: var(--muted); padding: 40px 28px; text-align: center; font-size: 14px;
+}

@@ -11,6 +11,7 @@ const FILTERS: Array<EntityStatus | 'ALL'> = ['ALL', 'ACTIVE', 'INACTIVE', 'ARCH
 export default function ProductsPage() {
   const [products, setProducts] = useState<ProductResponse[]>([]);
   const [filter, setFilter] = useState<EntityStatus | 'ALL'>('ALL');
+  const [q, setQ] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -24,6 +25,10 @@ export default function ProductsPage() {
   }, [filter]);
 
   const hasCost = products.some((p) => p.cost !== undefined);
+  const search = q.trim().toLowerCase();
+  const visible = search
+    ? products.filter((p) => p.sku.toLowerCase().includes(search) || p.name.toLowerCase().includes(search))
+    : products;
 
   return (
     <div>
@@ -32,17 +37,21 @@ export default function ProductsPage() {
         <Link href="/products/new" className="btn">+ New product</Link>
       </div>
 
-      <div className="toolbar" style={{ marginBottom: 12 }}>
+      <div className="toolbar">
+        <input placeholder="Search SKU or name…" value={q} onChange={(e) => setQ(e.target.value)} />
         {FILTERS.map((f) => (
           <button key={f} className={`btn ${f === filter ? '' : 'secondary'} small`} style={{ marginTop: 0 }} onClick={() => setFilter(f)}>{f}</button>
         ))}
+        {!loading && <span className="count">{visible.length}{visible.length !== products.length ? ` of ${products.length}` : ''} {products.length === 1 ? 'product' : 'products'}</span>}
       </div>
 
       {error && <div className="error">{error}</div>}
       {loading ? (
         <div className="card muted">Loading…</div>
       ) : products.length === 0 ? (
-        <div className="card muted">No products.</div>
+        <div className="card muted">No products yet. Create one to start tracking stock.</div>
+      ) : visible.length === 0 ? (
+        <div className="card muted">No products match “{q}”.</div>
       ) : (
         <div className="table-wrap">
           <table className="grid">
@@ -53,7 +62,7 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
+              {visible.map((p) => (
                 <tr key={p.id}>
                   <td><Link href={`/products/${p.id}`}>{p.sku}</Link></td>
                   <td>{p.name}</td>
