@@ -9,8 +9,11 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
 WORKDIR /app
 
 # ---- build: install ALL deps, build @iw/contracts + @iw/api, generate Prisma ----
+# NOTE: do NOT set NODE_ENV here — npm ci installs devDependencies regardless
+# (npm 7+ needs an explicit --omit=dev to skip them), and a leaked
+# NODE_ENV=development into the runtime stage's tooling is a needless footgun
+# (see apps/web/Dockerfile, where the same leak broke `next build` outright).
 FROM base AS build
-ENV NODE_ENV=development
 # Manifests first for a cached install layer.
 COPY package.json package-lock.json turbo.json tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/
