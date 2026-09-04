@@ -82,7 +82,12 @@ timestamp; balances are *derived* from the ledger, never edited in place.
 - **✅ 2D.4 — Supplier Analytics complete.**
 - **2D.5 — FIFO Costing** (first-in-first-out valuation as a strategy over the same quantity ledger; [ADR 0013](docs/adr/0013-fifo-costing.md)):
   - **2D.5A — FIFO Core (immutable per-(product,variant,warehouse) cost layers opened by receipts and consumed oldest-first on releases under `FOR UPDATE` locks, valued atomically inside the movement posting with inherited idempotency; org/per-product strategy policy with a zero-stock switch guard; WAC path untouched; cost-layer + WAC-vs-FIFO valuation queries + Costing UI):** ✅ [docs/PHASE-2D5A-FIFO-CORE.md](docs/PHASE-2D5A-FIFO-CORE.md)
-  - **Next:** 2D.5B — Propagation (transfers preserve cost basis, returns, adjustments, damage/disposal, counts, revaluation guards), then 2D.5C — UX + Reporting.
+  - **2D.5B — FIFO Propagation (transfers recreate exact multi-layer dispatch basis at receive; serialized returns restore original issued basis; untraceable FIFO returns are rejected until explicit valuation exists; negative adjustments, count losses, damage/disposal, and other value-removing workflows consume FIFO exactly once; positive adjustments require explicit unit cost; quarantine/restock leaves basis intact):** ✅ [docs/PHASE-2D5B-FIFO-PROPAGATION.md](docs/PHASE-2D5B-FIFO-PROPAGATION.md)
+  - **2D.5C — FIFO UX + Reporting (trace-first cost-layer explorer, movement consumption drill-down, transfer/return cost traces, FIFO valuation and FIFO COGS reports, WAC comparison, and strict cost/valuation permissions):** ✅ [docs/PHASE-2D5C-FIFO-UX-REPORTING.md](docs/PHASE-2D5C-FIFO-UX-REPORTING.md)
+  - **Status:** ✅ 2D.5 FIFO Costing complete.
+- **2D.6 — Mobile Scanner PWA** (installable scanner-first warehouse client; online-authoritative with an offline command journal, explicit conflict resolution, Workbox/service-worker shell, IndexedDB, device identity, Web Locks/BroadcastChannel coordination, task claiming, and platform fallbacks; [ADR 0014](docs/adr/0014-mobile-scanner-pwa.md)): [docs/PHASE-2D6-MOBILE-SCANNER-PWA.md](docs/PHASE-2D6-MOBILE-SCANNER-PWA.md)
+  - **Next:** 2D.6A — PWA + Device Foundation.
+  - **Then:** 2D.6B Mobile Workflows, 2D.6C Offline Command + Conflict Engine, 2D.6D Resilience + Operational Hardening.
 - Pre-2D hygiene: `/inventory/reconcile` now reconciles `reserved` against active reservations (off-ledger, ADR 0005) rather than movement deltas.
 
 The web app now has an auth-guarded shell with Dashboard, Stock Overview, Products, and a working
@@ -128,5 +133,6 @@ Never `product.stock_quantity = newQuantity`. Always post a movement.
 
 ## Next step
 
-Begin Roadmap step 01 (Foundation / Auth / Organization), then build the **ledger (07)** and
-**balance engine (08)** before any operational document. See §20 of the spec.
+Begin **2D.6A - PWA + Device Foundation**: manifest/installability, Workbox/service worker, offline shell,
+IndexedDB, persistent storage request, device installation ID, connectivity state, update UX, Web Locks,
+BroadcastChannel, scanner adapters, and wake-lock progressive enhancement.

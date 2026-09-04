@@ -63,5 +63,4 @@ Costing page (WAC ₱1,600 vs FIFO ₱1,650 on a two-layer product).
 > historical cost layers, while physical inventory remains governed by the existing ledger and the WAC path
 > is unchanged. ✅
 
-**Next:** 2D.5B — Propagation (transfers preserve cost basis, returns restore original basis, adjustments,
-damage/disposal, counts, strategy-migration/revaluation guards).
+**Next:** 2D.5B - FIFO Propagation is complete in [PHASE-2D5B-FIFO-PROPAGATION.md](PHASE-2D5B-FIFO-PROPAGATION.md).
