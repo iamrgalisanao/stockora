@@ -83,27 +83,33 @@ cycle-count scenario (open online → capture → reload restores the session �
 success → server inventory unchanged → reconnect + Sync now → Synced), plus `mobile-workflows.e2e-spec.ts`
 (10) for scope/isolation/exclusion/tracking/claim/idempotency/gates/no-mutation.
 
-### 2D.6C - Offline Command + Conflict Engine
+### 2D.6C - Offline Command + Conflict Engine ✅ Shipped
 
 ```text
-PendingCommand queue
-idempotency keys
-dependency ordering
-manual Sync Now
-startup/resume/reconnect sync
-Background Sync enhancement
-server command revalidation
-normalized CommandResult
-normalized ConflictType
-conflict inbox
-command receipts
-optimistic aggregate/document versions
+revalidate-and-apply processor   POST /mobile/commands adapts payloads into the EXISTING domain services
+exactly-once                     terminal-receipt short-circuit + version check + domain idempotency/locks
+optimistic version check         losing concurrent command -> CONFLICT (per-type state-changed code)
+dependency ordering              dependsOnCommandId -> BLOCKED until predecessor APPLIED (client + server)
+manual Sync Now                  /m/pending drains sequentially under Web Locks, dependency-aware
+server command revalidation      current permission + warehouse scope + domain invariants under lock
+normalized outcomes              MobileCommandReceipt {status, code, resolution, currentState, versionAfter}
+conflict vs rejection            CONFLICT (recoverable) distinct from REJECTED (terminal)
+conflict inbox                   /m/conflicts — document, captured, server-now, reason, action; no force/overwrite
+command receipts                 mobile_commands row is the authoritative projection (applied/conflict/rejected)
+SUBMISSION_UNKNOWN               timeout retry reuses the idempotency key -> same receipt, no double-apply
 ```
 
-Definition of done:
+Definition of done — **met**:
 
 > Queued mobile commands sync exactly once, preserve dependency order, revalidate against current server state,
 > and surface explicit conflicts without silent merge, reallocation, or overwrite.
+
+Correctness note: the processor NEVER reimplements domain logic — it revalidates and calls the existing
+receiving/release/transfer/count/return services, so mobile inherits their deterministic locking and
+invariants. Concurrent devices, retries, stale offline snapshots, and reconnects cannot create duplicate
+movements, overdraw inventory, reuse serials, bypass warehouse scope, or overwrite committed state. Proven by
+`mobile-sync.e2e-spec.ts` (8 concurrency scenarios incl. the mandatory serial race + quantity shortage, each
+finishing with inventory/serial reconcile OK) and a live UI smoke of the serial race end to end.
 
 ### 2D.6D - Resilience + Operational Hardening
 
