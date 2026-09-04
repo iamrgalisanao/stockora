@@ -178,16 +178,20 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   font-family: var(--f-display); font-weight: 600; font-size: 18px; letter-spacing: -0.02em;
   background: var(--skywash); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-/* Minimalist rail toggle (chevron) — collapses the whole sidebar to an icon rail. */
+/* Minimalist rail toggle (chevron) — pinned on the sidebar/content boundary line,
+   at the top; collapses the whole sidebar to an icon rail. */
 .rail-toggle {
-  appearance: none; flex-shrink: 0; width: 26px; height: 26px; border-radius: 999px;
+  appearance: none; position: fixed; top: 15px; left: 240px; transform: translateX(-50%);
+  z-index: 60; width: 26px; height: 26px; border-radius: 999px; padding: 0; line-height: 0;
   display: grid; place-items: center; cursor: pointer;
-  background: var(--wash); border: 1px solid var(--border); color: var(--muted);
-  transition: background .13s, color .13s, transform .13s;
+  background: var(--panel); border: 1px solid var(--border-strong); color: var(--muted);
+  box-shadow: 0 2px 10px -4px rgba(0,0,0,.7);
+  transition: left .22s var(--ease-drawer, cubic-bezier(0.32,0.72,0,1)), background .13s, color .13s, border-color .13s, transform .13s;
 }
-.rail-toggle:hover { background: var(--wash-2); color: var(--ice); border-color: var(--border-strong); }
-.rail-toggle:active { transform: scale(0.92); }
-.rail-toggle svg { width: 14px; height: 14px; transition: transform .2s var(--ease-out, cubic-bezier(0.23,1,0.32,1)); }
+.shell[data-collapsed] .rail-toggle { left: 74px; }
+.rail-toggle:hover { background: var(--wash-2); color: var(--ice); border-color: var(--accent-hi); }
+.rail-toggle:active { transform: translateX(-50%) scale(0.9); }
+.rail-toggle svg { width: 13px; height: 13px; display: block; transition: transform .2s var(--ease-out, cubic-bezier(0.23,1,0.32,1)); }
 .shell[data-collapsed] .rail-toggle svg { transform: rotate(180deg); }
 
 /* Grouped nav: hairline divider between sections + a collapsible accent header. */
