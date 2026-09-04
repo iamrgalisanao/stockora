@@ -38,7 +38,7 @@ export default function DashboardPage() {
 
       {/* Headline metrics */}
       <div className="dash-grid">
-        <Metric accent="#7b53ff" icon="tag" label="Products · SKUs" sparkId="skus" variant="a"
+        <Metric accent="#f5a623" icon="tag" label="Products · SKUs" sparkId="skus" variant="a"
           value={s.totalSkus.toLocaleString()} sub="Active catalog items" />
         <Metric accent="#4ea8f5" icon="boxes" label="On hand" sparkId="onhand" variant="b"
           value={onHand.toLocaleString()}

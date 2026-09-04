@@ -16,7 +16,7 @@ const NAV: Array<{ group: string; accent: string; links: NavLink[] }> = [
     { href: '/inventory', label: 'Stock Overview', icon: 'boxes' },
     { href: '/inventory/position', label: 'Inventory Position', icon: 'pin' },
   ] },
-  { group: 'Catalog', accent: '#8b73ff', links: [
+  { group: 'Catalog', accent: '#f5a623', links: [
     { href: '/products', label: 'Products', icon: 'tag' },
     { href: '/suppliers', label: 'Suppliers', icon: 'truck' },
   ] },
