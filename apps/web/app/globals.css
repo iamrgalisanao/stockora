@@ -214,3 +214,58 @@ table.grid td.num, table.grid th.num { text-align: right; font-family: var(--f-m
 
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(3,4,10,.6); backdrop-filter: blur(4px); z-index: 50; }
 .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 400px; max-width: 92vw; background: var(--panel); border-left: 1px solid var(--border); padding: 24px; overflow-y: auto; z-index: 51; box-shadow: -30px 0 60px -30px rgba(0,0,0,.9); }
+
+/* ---- Dashboard (bespoke) ---- */
+.dash-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.dash-grid.attn { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1040px){ .dash-grid, .dash-grid.attn { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px){ .dash-grid, .dash-grid.attn { grid-template-columns: 1fr; } }
+
+.metric { position: relative; overflow: hidden; }
+.metric .lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.metric .val { font-family: var(--f-display); font-weight: 600; font-size: 30px; letter-spacing: -.02em; color: var(--ice); margin: 10px 0 4px; font-variant-numeric: tabular-nums; }
+.metric .sub { font-size: 12.5px; color: var(--muted); }
+.metric .sub b { color: var(--text); font-weight: 500; font-family: var(--f-mono); }
+
+.ratio { height: 6px; border-radius: 999px; background: var(--wash-2); margin-top: 14px; overflow: hidden; }
+.ratio > i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #3fbfa3, #54b7ac); }
+
+/* stock composition stacked bar */
+.compo { display: block; }
+.compo .bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--wash); box-shadow: var(--el-hair); }
+.compo .bar > span { display: block; height: 100%; }
+.compo .seg-avail { background: #3fbfa3; }
+.compo .seg-resv { background: #4ea8f5; }
+.compo .seg-transit { background: #e2b24d; }
+.compo .legend { display: flex; flex-wrap: wrap; gap: 18px 26px; margin-top: 16px; }
+.compo .leg { display: flex; align-items: baseline; gap: 8px; }
+.compo .leg .k { width: 9px; height: 9px; border-radius: 3px; align-self: center; }
+.compo .leg .t { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.compo .leg .v { font-family: var(--f-mono); font-variant-numeric: tabular-nums; color: var(--ice); font-size: 15px; margin-left: auto; }
+
+/* attention / exception cards */
+.attn-card { display: block; text-decoration: none; padding-left: 20px; position: relative; transition: background .14s, transform .05s; }
+.attn-card::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 999px; background: var(--faint); }
+.attn-card.ok::before { background: #3fbfa3; }
+.attn-card.warn::before { background: #e2b24d; }
+.attn-card.danger::before { background: #e46d4c; }
+.attn-card:hover { background: #0d1120; }
+.attn-card .lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.attn-card .val { font-family: var(--f-display); font-weight: 600; font-size: 26px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.attn-card.ok .val { color: var(--accent-2); } .attn-card.warn .val { color: var(--warn); } .attn-card.danger .val { color: var(--danger); }
+.attn-card .go { position: absolute; top: 16px; right: 18px; color: var(--faint); font-size: 18px; }
+
+/* pending documents strip */
+.pending-strip { display: flex; flex-wrap: wrap; gap: 10px; }
+.pending-chip { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); text-decoration: none; box-shadow: var(--el); transition: background .14s; }
+.pending-chip:hover { background: #0d1120; }
+.pending-chip .n { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 18px; color: var(--ice); font-weight: 500; }
+.pending-chip .n.zero { color: var(--faint); }
+.pending-chip .t { font-size: 13px; color: var(--muted); }
+
+.section-eyebrow { font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin: 28px 0 12px; }
+
+/* movement direction badge */
+.mv { font-family: var(--f-mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--wash); color: var(--muted); }
+.mv.in { color: var(--accent-2); background: rgba(38,150,132,.14); }
+.mv.out { color: var(--danger); background: rgba(228,109,76,.14); }
