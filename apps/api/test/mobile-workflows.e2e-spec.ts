@@ -185,48 +185,53 @@ describe('mobile workflows (e2e, 2D.6B)', () => {
   });
 
   // ---- command intake ----
+  // A command targeting a well-formed but nonexistent document — cleanly REJECTED without side effects.
+  // (Command apply/conflict semantics are exercised in depth by mobile-sync.e2e-spec.ts.)
   const cmd = (over: Record<string, any> = {}) => ({
     commandId: randomUUID(),
     idempotencyKey: `idem-${u}-${seq++}`,
     deviceId: 'WH-TAB-01',
     warehouseId: mainWh,
-    commandType: 'COUNT_SUBMIT',
+    commandType: 'RELEASE_PICK',
+    aggregateId: randomUUID(),
     schemaVersion: 1,
     appVersion: '2.6.0',
-    payload: { entries: [] },
+    payload: { lines: [] },
     capturedAt: new Date().toISOString(),
     ...over,
   });
 
-  it('command intake is exactly-once by idempotency key — a retry returns the same receipt, never a second command', async () => {
+  it('command intake is exactly-once by idempotency key — a retry replays the same settled receipt', async () => {
     const key = `idem-once-${u}-${seq++}`;
-    const first = (await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ idempotencyKey: key, commandId: randomUUID() })).expect(201)).body;
-    expect(first.outcome).toBe('RECEIVED');
-    expect(first.applyStatus).toBe('ACKNOWLEDGED');
-    // A timeout-driven retry sends the SAME key (even with a different commandId) and must not double-record.
+    const cid = randomUUID();
+    const first = (await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ idempotencyKey: key, commandId: cid })).expect(201)).body;
+    expect(first.status).toBe('REJECTED'); // nonexistent document
+    expect(first.replay).toBe(false);
+    // A timeout-driven retry sends the SAME key (even with a different commandId) and replays the same receipt.
     const retry = (await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ idempotencyKey: key, commandId: randomUUID() })).expect(201)).body;
-    expect(retry.outcome).toBe('ALREADY_PROCESSED');
+    expect(retry.status).toBe('REJECTED');
+    expect(retry.replay).toBe(true);
     expect(retry.commandId).toBe(first.commandId); // the original command wins
-    expect(retry.receivedAt).toBe(first.receivedAt);
   });
 
-  it('command intake enforces permission, scope, and schema/version gates', async () => {
+  it('command intake enforces permission, scope, and schema/version gates (as REJECTED receipts)', async () => {
     // WEST-scoped staff cannot submit a command targeting MAIN.
-    await http().post('/api/mobile/commands').set(auth(westStaffToken)).send(cmd({ warehouseId: mainWh })).expect(403);
-    // Unsupported schema is refused.
-    await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ schemaVersion: 99 })).expect(400);
-    // Below-minimum app build is refused.
-    await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ appVersion: '0.0.1' })).expect(400);
+    const scope = (await http().post('/api/mobile/commands').set(auth(westStaffToken)).send(cmd({ warehouseId: mainWh })).expect(201)).body;
+    expect(scope.status).toBe('REJECTED');
+    expect(scope.code).toBe('WAREHOUSE_SCOPE_REVOKED');
+    // Unsupported schema and below-minimum build are refused.
+    expect((await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ schemaVersion: 99 })).expect(201)).body.code).toBe('SCHEMA_UNSUPPORTED');
+    expect((await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ appVersion: '0.0.1' })).expect(201)).body.code).toBe('SCHEMA_UNSUPPORTED');
   });
 
-  it('command intake does not mutate inventory (capture only) — balances are untouched', async () => {
+  it('a command for a nonexistent document is rejected and mutates nothing', async () => {
     const p = await newProduct();
     await receiveStock(p, 10);
     const before = (await http().get(`/api/inventory/balances?productId=${p}`).set(auth()).expect(200)).body;
-    await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({
-      commandType: 'RELEASE_PICK', aggregateId: 'some-release', payload: { lines: [{ lineId: 'x', quantity: 5 }] },
-    })).expect(201);
+    const res = (await http().post('/api/mobile/commands').set(auth(staffToken)).send(cmd({ payload: { lines: [{ lineId: randomUUID(), quantity: 5 }] } })).expect(201)).body;
+    expect(res.status).toBe('REJECTED');
+    expect(res.code).toBe('ENTITY_ARCHIVED');
     const after = (await http().get(`/api/inventory/balances?productId=${p}`).set(auth()).expect(200)).body;
-    expect(after).toEqual(before); // the command was captured, not applied
+    expect(after).toEqual(before);
   });
 });

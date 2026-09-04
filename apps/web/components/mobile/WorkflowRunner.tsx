@@ -177,12 +177,16 @@ export function WorkflowRunner({ workType }: { workType: MobileWorkType }) {
           <div className={`m-banner ${result.state === 'SYNCED' ? 'info' : ''}`}>
             <StatusBadge status={statusFromCommand(result.state, result.mayHaveReachedServer)} />{' '}
             {result.state === 'SYNCED'
-              ? 'Submitted to the server. Nothing on-hand changes until the sync engine applies it.'
-              : result.mayHaveReachedServer
-                ? 'Sent, but the response was lost. It is safely queued and will retry with the same key — no double-apply.'
-                : result.state === 'FAILED'
-                  ? `Needs attention: ${result.lastError ?? 'rejected'}`
-                  : 'Captured offline and queued. It will sync when the server is reachable.'}
+              ? 'Applied — the server committed this through the inventory ledger.'
+              : result.state === 'CONFLICT'
+                ? `Conflict: ${result.receipt?.message ?? result.receipt?.code ?? 'server state changed'}. Open Conflicts to resolve.`
+                : result.state === 'REJECTED'
+                  ? `Rejected: ${result.receipt?.message ?? result.receipt?.code ?? 'not allowed'}.`
+                  : result.mayHaveReachedServer
+                    ? 'Sent, but the response was lost. It is safely queued and will retry with the same key — no double-apply.'
+                    : result.state === 'FAILED'
+                      ? `Needs attention: ${result.lastError ?? 'rejected'}`
+                      : 'Captured offline and queued. It will sync when the server is reachable.'}
           </div>
         )}
 

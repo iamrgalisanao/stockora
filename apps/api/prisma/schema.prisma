@@ -1936,12 +1936,21 @@ model MobileCommand {
   commandType     String   @map("command_type") // MobileCommandType
   aggregateId     String?  @map("aggregate_id")
   expectedVersion BigInt?  @map("expected_version")
+  dependsOnCommandId String? @map("depends_on_command_id") @db.Uuid
   schemaVersion   Int      @map("schema_version")
   appVersion      String   @map("app_version")
   payload         Json
+  // ACKNOWLEDGED (received, not yet applied) | APPLIED | CONFLICT | REJECTED | BLOCKED. Terminal =
+  // APPLIED/CONFLICT/REJECTED; a re-submit of the same idempotencyKey returns the stored receipt.
   applyStatus     String   @default("ACKNOWLEDGED") @map("apply_status")
+  code            String?  // MobileConflictCode | MobileRejectionCode
+  message         String?
+  resolution      String?  // MobileResolution
+  currentState    Json?    @map("current_state")
+  aggregateVersionAfter BigInt? @map("aggregate_version_after")
   capturedAt      DateTime @map("captured_at")
   receivedAt      DateTime @default(now()) @map("received_at")
+  appliedAt       DateTime? @map("applied_at")
 
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, warehouseId, applyStatus])

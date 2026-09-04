@@ -11,7 +11,7 @@ export type MobileStatus = 'synced' | 'pending' | 'attention';
 
 export function statusFromCommand(state: PendingCommandState, mayHaveReachedServer?: boolean): MobileStatus {
   if (state === 'SYNCED') return 'synced';
-  if (state === 'FAILED' || state === 'CONFLICT') return 'attention';
+  if (state === 'FAILED' || state === 'CONFLICT' || state === 'REJECTED') return 'attention';
   // QUEUED / SYNCING / BLOCKED / LOCAL_DRAFT — including SUBMISSION_UNKNOWN — are all still pending.
   void mayHaveReachedServer;
   return 'pending';

@@ -21,6 +21,7 @@ export class SubmitCommandDto {
   @IsString() @MaxLength(40) commandType!: MobileCommandType;
   @IsOptional() @IsString() @MaxLength(64) aggregateId?: string;
   @IsOptional() @IsInt() expectedVersion?: number;
+  @IsOptional() @IsString() @MaxLength(64) dependsOnCommandId?: string;
   @IsInt() schemaVersion!: number;
   @IsString() @MaxLength(40) appVersion!: string;
   @IsObject() payload!: Record<string, unknown>;
