@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Toaster } from 'sonner';
 import { api, clearToken, getToken } from '../../lib/api';
 
 const NAV: Array<{ group: string; links: Array<{ href: string; label: string }> }> = [
@@ -113,6 +114,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <main className="main">{children}</main>
+      <Toaster theme="dark" position="bottom-right" gap={10} toastOptions={{ duration: 3500 }} />
     </div>
   );
 }

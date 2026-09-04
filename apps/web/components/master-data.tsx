@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AuditEntryResponse, EntityStatus } from '@iw/contracts';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { auditActor, auditSummary } from '../lib/audit-format';
 
@@ -23,16 +24,25 @@ export function AuditDrawer({
   onClose: () => void;
 }) {
   const [rows, setRows] = useState<AuditEntryResponse[] | null>(null);
+  const [closing, setClosing] = useState(false);
   useEffect(() => {
     api.audit.forEntity(entityType, entityId).then(setRows).catch(() => setRows([]));
   }, [entityType, entityId]);
 
+  // Graceful close: play the slide-out, then unmount. onClose fires either way — reduced motion closes at once.
+  const close = useCallback(() => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { onClose(); return; }
+    setClosing(true);
+    window.setTimeout(onClose, 300);
+  }, [onClose]);
+
   return (
-    <div className="drawer-backdrop" onClick={onClose}>
-      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+    <div className="drawer-backdrop" data-closing={closing || undefined} onClick={close}>
+      <div className="drawer" data-closing={closing || undefined} onClick={(e) => e.stopPropagation()}>
         <div className="row" style={{ marginBottom: 12 }}>
           <div className="brand">History — {label}</div>
-          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={onClose}>Close</button>
+          <button className="btn secondary small" style={{ marginTop: 0 }} onClick={close}>Close</button>
         </div>
         {rows === null ? (
           <div className="muted">Loading…</div>
@@ -105,9 +115,13 @@ export function MasterDataManager<T extends { id: string; status: EntityStatus }
     setError(null);
     try {
       await changeStatus(row.id, to);
+      const verb = to === 'ARCHIVED' ? 'archived' : to === 'ACTIVE' ? 'activated' : 'deactivated';
+      toast.success(`${labelOf(row)} ${verb}`);
       reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed');
+      const msg = e instanceof Error ? e.message : 'Action failed';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }

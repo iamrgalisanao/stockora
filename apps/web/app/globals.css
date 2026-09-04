@@ -306,3 +306,24 @@ table.grid td.num, table.grid th.num { text-align: right; font-family: var(--f-m
   .drawer { transition: none; }
   @starting-style { .drawer { transform: none; } }
 }
+
+/* Drawer graceful exit — the component sets data-closing during close, then unmounts */
+.drawer[data-closing="true"] { transform: translateX(100%); }
+.drawer-backdrop[data-closing="true"] { opacity: 0; }
+
+/* Sonner toasts — themed to the frosted-glass system (bottom-right action feedback) */
+[data-sonner-toaster] {
+  --normal-bg: var(--panel);
+  --normal-border: var(--border);
+  --normal-text: var(--text);
+  --success-bg: var(--panel);
+  --success-text: var(--accent-2);
+  --error-bg: var(--panel);
+  --error-text: var(--danger);
+  font-family: var(--f-body);
+}
+[data-sonner-toast] { border-radius: 12px; box-shadow: var(--el); }
+[data-sonner-toast] [data-title] { color: var(--ice); font-weight: 500; }
+[data-sonner-toast] [data-description] { color: var(--muted); }
+[data-sonner-toast][data-type="success"] [data-icon] { color: var(--accent-2); }
+[data-sonner-toast][data-type="error"] [data-icon] { color: var(--danger); }
