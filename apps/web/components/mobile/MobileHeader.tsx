@@ -22,7 +22,9 @@ export function MobileHeader({ title, back }: { title?: string; back?: boolean }
     c.start();
     const tick = () => {
       pendingCount().then(setPending).catch(() => {});
-      countByState('FAILED').then(setAttention).catch(() => {});
+      // Attention = anything needing the operator: conflicts, rejections, and transport failures.
+      Promise.all([countByState('CONFLICT'), countByState('REJECTED'), countByState('FAILED')])
+        .then(([c, r, f]) => setAttention(c + r + f)).catch(() => {});
     };
     tick();
     const t = setInterval(tick, 5000);
@@ -41,7 +43,7 @@ export function MobileHeader({ title, back }: { title?: string; back?: boolean }
       </div>
       <div className="m-header-r">
         <Link href="/m/pending" className={`m-pill ${pending > 0 ? 'warn' : 'ok'}`} style={{ textDecoration: 'none' }}>⏳ {pending}</Link>
-        {attention > 0 && <Link href="/m/pending" className="m-pill bad" style={{ textDecoration: 'none' }}>⚠ {attention}</Link>}
+        {attention > 0 && <Link href="/m/conflicts" className="m-pill bad" style={{ textDecoration: 'none' }}>⚠ {attention}</Link>}
         <span className={`m-pill ${connKlass}`}><span className="m-dot" />{conn}</span>
       </div>
     </div>

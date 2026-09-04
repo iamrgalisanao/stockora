@@ -16,11 +16,46 @@ export type PendingCommandState =
   | 'LOCAL_DRAFT' // being built on-screen, not yet queued
   | 'QUEUED' // committed to the local journal, awaiting sync
   | 'SYNCING' // in flight to the server
-  | 'SYNCED' // server accepted (or ALREADY_PROCESSED) — a settled business fact
-  | 'CONFLICT' // server rejected on a precondition; needs operator resolution
-  | 'FAILED' // transient/transport failure; eligible for retry
-  | 'BLOCKED' // a dependency has not synced yet
+  | 'SYNCED' // server APPLIED it through the domain services — a settled, authoritative fact
+  | 'CONFLICT' // current server state changed since capture; operator may resolve/retry
+  | 'REJECTED' // fundamentally invalid/unauthorized; must NOT be auto-retried
+  | 'FAILED' // transient/transport failure; eligible for retry (kept for transport errors)
+  | 'BLOCKED' // a dependency command has not applied yet
   | 'CANCELLED'; // discarded locally before it was accepted
+
+/** Why a command could not apply against current state — recoverable; the operator may resolve/retry. */
+export type MobileConflictCode =
+  | 'SERIAL_ALREADY_ISSUED'
+  | 'SERIAL_WRONG_STATE'
+  | 'INSUFFICIENT_STOCK'
+  | 'LOT_ALLOCATION_STALE'
+  | 'FEFO_ALLOCATION_STALE'
+  | 'DOCUMENT_STALE'
+  | 'DOCUMENT_ALREADY_PROCESSED'
+  | 'RESERVATION_CHANGED'
+  | 'TRANSFER_STATE_CHANGED'
+  | 'COUNT_STATE_CHANGED'
+  | 'CLAIM_CHANGED';
+
+/** Why a command is fundamentally invalid/unauthorized — terminal; must not be auto-retried. */
+export type MobileRejectionCode =
+  | 'PERMISSION_REVOKED'
+  | 'WAREHOUSE_SCOPE_REVOKED'
+  | 'SCHEMA_UNSUPPORTED'
+  | 'INVALID_PAYLOAD'
+  | 'ENTITY_ARCHIVED'
+  | 'OFFLINE_AUTHORIZATION_EXPIRED';
+
+/** Operator actions the conflict inbox may offer. Deliberately excludes any "force/overwrite" action. */
+export type MobileResolution =
+  | 'REFRESH'
+  | 'RESCAN'
+  | 'REALLOCATE'
+  | 'REMOVE_ITEM'
+  | 'DISCARD_LOCAL_COMMAND'
+  | 'RETRY'
+  | 'SUPERVISOR_REVIEW'
+  | 'REAUTHENTICATE';
 
 /**
  * The command catalog captured by the 2D.6B scanner workflows. One command per physical action against a
@@ -55,6 +90,9 @@ export interface PendingCommand<TPayload = unknown> {
   commandType: MobileCommandType;
   aggregateId?: string; // target document/aggregate (release id, receipt id, count id, …)
   expectedVersion?: number; // optimistic concurrency token captured for aggregateId
+  /** A command that must apply before this one (offline dependency chain, e.g. dispatch → receive). While the
+   *  dependency is not SYNCED, this command stays BLOCKED and is not sent. */
+  dependsOnCommandId?: string;
   payload: TPayload; // command-specific intent (scanned serials, counted set, quantities)
   idempotencyKey: string; // stable exactly-once key
   capturedAt: string; // ISO timestamp captured on-device
@@ -72,19 +110,33 @@ export interface PendingCommand<TPayload = unknown> {
   receipt?: MobileCommandReceipt;
 }
 
+/** Authoritative apply status of a command (2D.6C). APPLIED means the domain services committed it. */
+export type MobileApplyStatus = 'APPLIED' | 'CONFLICT' | 'REJECTED' | 'BLOCKED';
+
 /**
- * Server acknowledgement of a submitted command (2D.6B `POST /mobile/commands`). In 2D.6B a command is
- * durably RECEIVED (queued for exactly-once apply); it is NOT yet executed against inventory — that, plus
- * revalidation and conflict resolution, is 2D.6C. Re-submitting the same idempotencyKey returns this same
- * receipt (ALREADY_PROCESSED), so a timeout-driven retry can never double-apply.
+ * The authoritative server receipt for a submitted command (2D.6C `POST /mobile/commands`). The command is
+ * revalidated inside the same short transaction that applies the authoritative domain action, then this
+ * receipt is stored. Re-submitting the same idempotencyKey returns the SAME receipt (`replay: true`) so a
+ * timeout retry can never double-apply. The mobile UI must treat only `status === 'APPLIED'` as success —
+ * never HTTP 200 alone.
+ *
+ * `currentState` is deliberately bounded (e.g. `{ available: 4 }` or `{ serialStatus: 'ISSUED' }`) — never a
+ * whole document or cost/pricing detail.
  */
 export interface MobileCommandReceipt {
   commandId: string;
   idempotencyKey: string;
-  outcome: 'RECEIVED' | 'ALREADY_PROCESSED';
-  /** Server-side apply status. 2D.6B leaves this ACKNOWLEDGED; 2D.6C moves it to APPLIED/CONFLICT. */
-  applyStatus: 'ACKNOWLEDGED';
-  receivedAt: string;
+  status: MobileApplyStatus;
+  /** Whether this response is an idempotent replay of an already-settled command. */
+  replay: boolean;
+  code?: MobileConflictCode | MobileRejectionCode;
+  message?: string;
+  resolution?: MobileResolution;
+  currentState?: Record<string, unknown>;
+  aggregateId?: string;
+  /** The document version after a successful apply (server updatedAt epoch ms). */
+  aggregateVersionAfter?: number;
+  acceptedAt: string;
 }
 
 // ---------------------------------------------------------------------------

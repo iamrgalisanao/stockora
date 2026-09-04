@@ -62,10 +62,14 @@ export async function submitCommand(command: PendingCommand): Promise<PendingCom
     clearTimeout(timer);
     if (res.ok) {
       const receipt = (await res.json()) as MobileCommandReceipt;
-      // ACCEPTED or ALREADY_PROCESSED are both settled outcomes — the command is exactly-once on the server.
-      return persist({ ...command, state: 'SYNCED', attempts, receipt, mayHaveReachedServer: false, lastError: undefined });
+      // The authoritative outcome comes from the receipt STATUS, never from HTTP 200 alone (ADR 0014).
+      const state = receipt.status === 'APPLIED' ? 'SYNCED'
+        : receipt.status === 'CONFLICT' ? 'CONFLICT'
+          : receipt.status === 'REJECTED' ? 'REJECTED'
+            : 'BLOCKED';
+      return persist({ ...command, state, attempts, receipt, mayHaveReachedServer: false, lastError: receipt.message });
     }
-    // A response arrived: this is a DEFINITE outcome, so no retry ambiguity. Surface for operator attention.
+    // A non-OK HTTP response (e.g. a validation 400) is a definite failure — surface for operator attention.
     let message = `Rejected (${res.status})`;
     try {
       const body = await res.json();
@@ -88,26 +92,52 @@ async function persist(command: PendingCommand): Promise<PendingCommand> {
   return command;
 }
 
+const SUBMITTABLE = new Set(['QUEUED', 'FAILED', 'BLOCKED']);
+
+/** A command may go to the server only if it has no dependency, or its dependency has already SYNCED. */
+function dependencySatisfied(command: PendingCommand, stateById: Map<string, string>): boolean {
+  if (!command.dependsOnCommandId) return true;
+  return stateById.get(command.dependsOnCommandId) === 'SYNCED';
+}
+
 /**
- * Drain all submittable commands under the single-owner sync lock (ADR 0014 §7) so two tabs never double-post.
- * Returns a small summary for the Pending Sync UI. Commands are retried with their existing idempotencyKey.
+ * Drain submittable commands under the single-owner sync lock (ADR 0014 §7) so two tabs never double-post.
+ * Commands are processed sequentially in capture order, honouring dependency chains: a command whose
+ * predecessor has not SYNCED stays BLOCKED and is skipped this round. Retries reuse the existing idempotency
+ * key. CONFLICT/REJECTED are terminal here — they need the operator (conflict inbox), not an auto-retry.
  */
-export async function syncPending(): Promise<{ owner: boolean; synced: number; failed: number; unknown: number; remaining: number }> {
+export async function syncPending(): Promise<{ owner: boolean; synced: number; conflicts: number; rejected: number; blocked: number; unknown: number; remaining: number }> {
   const { acquired, result } = await withSyncLock(async () => {
-    const all = await idbGetAll<PendingCommand>(STORES.commands);
-    const submittable = all.filter((c) => c.state === 'QUEUED' || c.state === 'FAILED');
-    let synced = 0;
-    let failed = 0;
-    let unknown = 0;
-    for (const c of submittable) {
+    const all = (await idbGetAll<PendingCommand>(STORES.commands)).sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+    const stateById = new Map(all.map((c) => [c.commandId, c.state]));
+    let synced = 0, conflicts = 0, rejected = 0, blocked = 0, unknown = 0;
+    for (const c of all) {
+      if (!SUBMITTABLE.has(c.state)) continue;
+      if (!dependencySatisfied(c, stateById)) { blocked += 1; stateById.set(c.commandId, 'BLOCKED'); continue; }
       const after = await submitCommand(c);
+      stateById.set(c.commandId, after.state);
       if (after.state === 'SYNCED') synced += 1;
-      else if (after.state === 'FAILED') failed += 1;
+      else if (after.state === 'CONFLICT') conflicts += 1;
+      else if (after.state === 'REJECTED') rejected += 1;
+      else if (after.state === 'BLOCKED') blocked += 1;
       else if (after.mayHaveReachedServer) unknown += 1;
     }
-    const remaining = (await idbGetAll<PendingCommand>(STORES.commands)).filter((c) => c.state === 'QUEUED' || c.state === 'FAILED').length;
-    return { synced, failed, unknown, remaining };
+    const remaining = (await idbGetAll<PendingCommand>(STORES.commands)).filter((c) => SUBMITTABLE.has(c.state)).length;
+    return { synced, conflicts, rejected, blocked, unknown, remaining };
   });
-  if (!acquired || !result) return { owner: false, synced: 0, failed: 0, unknown: 0, remaining: 0 };
+  if (!acquired || !result) return { owner: false, synced: 0, conflicts: 0, rejected: 0, blocked: 0, unknown: 0, remaining: 0 };
   return { owner: true, ...result };
+}
+
+/** All commands currently needing operator attention in the conflict inbox (CONFLICT or REJECTED). */
+export async function listConflicts(): Promise<PendingCommand[]> {
+  const all = await idbGetAll<PendingCommand>(STORES.commands);
+  return all.filter((c) => c.state === 'CONFLICT' || c.state === 'REJECTED').sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+}
+
+/** Discard a local command the operator has chosen not to keep (conflict resolution DISCARD_LOCAL_COMMAND). */
+export async function discardCommand(commandId: string): Promise<void> {
+  const all = await idbGetAll<PendingCommand>(STORES.commands);
+  const c = all.find((x) => x.commandId === commandId);
+  if (c) await idbPut(STORES.commands, { ...c, state: 'CANCELLED' });
 }

@@ -29,7 +29,7 @@ export default function PendingPage() {
     try {
       const r = await syncPending();
       if (!r.owner) setMsg('Another tab is already syncing on this device.');
-      else setMsg(`Synced ${r.synced}, needs attention ${r.failed}, uncertain ${r.unknown}, remaining ${r.remaining}.`);
+      else setMsg(`Applied ${r.synced} · conflicts ${r.conflicts} · rejected ${r.rejected} · blocked ${r.blocked} · uncertain ${r.unknown} · remaining ${r.remaining}.`);
       await refresh();
     } finally {
       setSyncing(false);
