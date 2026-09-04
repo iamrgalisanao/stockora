@@ -72,6 +72,7 @@ export class AdjustmentsService {
   ): Promise<AdjustmentResponse> {
     await this.warehouses.assertSelectableForCreate(organizationId, user, dto.warehouseId);
     await this.ensureProducts(organizationId, dto.items);
+    await this.assertPositiveValuation(organizationId, dto.items);
     if (dto.reasonId) await this.ensureReason(organizationId, dto.reasonId);
 
     const adjustmentNumber = await this.nextNumber(organizationId);
@@ -107,6 +108,7 @@ export class AdjustmentsService {
     await this.warehouses.assertAccess(organizationId, user, adj.warehouseId);
     this.assertStatus(adj, [AdjustmentStatus.DRAFT], 'edited');
     if (dto.items) await this.ensureProducts(organizationId, dto.items);
+    if (dto.items) await this.assertPositiveValuation(organizationId, dto.items);
     if (dto.reasonId) await this.ensureReason(organizationId, dto.reasonId);
 
     await this.prisma.$transaction(async (tx) => {
@@ -380,6 +382,24 @@ export class AdjustmentsService {
       serialDisposition: i.direction === 'OUT' ? i.serialDisposition ?? null : null,
       remarks: i.remarks ?? null,
     };
+  }
+
+  /**
+   * FIFO positive adjustments must carry an explicit unit cost — a new cost layer needs a valuation source and
+   * must never be silently zero-valued (ADR 0013 §7). WAC products are unaffected (they blend the average).
+   */
+  private async assertPositiveValuation(organizationId: string, items: AdjustmentItemInputDto[]): Promise<void> {
+    const inNoCost = items.filter((i) => i.direction === 'IN' && i.unitCost === undefined);
+    if (inNoCost.length === 0) return;
+    const productIds = [...new Set(inNoCost.map((i) => i.productId))];
+    const policies = await this.prisma.costingPolicy.findMany({ where: { organizationId, productId: { in: [...productIds, NIL_UUID] } } });
+    const orgDefault = policies.find((p) => p.productId === NIL_UUID)?.strategy ?? 'WAC';
+    for (const i of inNoCost) {
+      const strategy = policies.find((p) => p.productId === i.productId)?.strategy ?? orgDefault;
+      if (strategy === 'FIFO') {
+        throw new BadRequestException('A FIFO positive adjustment requires an explicit unit cost (no silently-valued layers)');
+      }
+    }
   }
 
   private isUniqueViolation(e: unknown): boolean {

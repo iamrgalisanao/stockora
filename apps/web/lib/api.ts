@@ -88,6 +88,11 @@ import type {
   CostLayerResponse,
   CostValuationRow,
   CostingStrategy,
+  FifoCogsReportResponse,
+  CostLayerTraceResponse,
+  MovementCostDetailResponse,
+  TransferCostTraceResponse,
+  ReturnCostTraceResponse,
 } from '@iw/contracts';
 
 export interface CreateTransferBody {
@@ -314,6 +319,16 @@ export const api = {
     for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
     const qs = q.toString();
     return request<CostValuationRow[]>(`/inventory/cost-valuation${qs ? `?${qs}` : ''}`);
+  },
+  costLayerTrace: (id: string) => request<CostLayerTraceResponse>(`/inventory/cost-layers/${id}/trace`),
+  movementCostDetail: (id: string) => request<MovementCostDetailResponse>(`/inventory/movements/${id}/cost-detail`),
+  transferCostTrace: (id: string) => request<TransferCostTraceResponse>(`/inventory/transfers/${id}/cost-trace`),
+  returnCostTrace: (id: string) => request<ReturnCostTraceResponse>(`/inventory/returns/${id}/cost-trace`),
+  fifoCogs: (filters: Record<string, string> = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return request<FifoCogsReportResponse>(`/inventory/fifo-cogs${qs ? `?${qs}` : ''}`);
   },
   positions: (filters: Record<string, string> = {}) => {
     const q = new URLSearchParams();

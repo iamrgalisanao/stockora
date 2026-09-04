@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, SerialStatus, TransferStatus } from '@prisma/client';
+import { MovementType, Prisma, SerialStatus, TransferStatus } from '@prisma/client';
 import type { TransferListItem, TransferResponse } from '@iw/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { RequestUser } from '../common/request-user';
 import { isWarehouseAllowed } from '../common/warehouse-scope';
 import { WarehousesService } from '../warehouses/warehouses.service';
+import { CostingService } from '../inventory/costing.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
 import { SerialsService } from '../serials/serials.service';
 import { NIL_UUID } from '../inventory/inventory.constants';
@@ -32,6 +33,7 @@ export class TransfersService {
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
     private readonly posting: InventoryPostingService,
+    private readonly costing: CostingService,
     private readonly serials: SerialsService,
   ) {}
 
@@ -304,8 +306,20 @@ export class TransfersService {
     const receivable = transfer.items
       .map((i) => ({ item: i, remaining: new Prisma.Decimal(i.qtyDispatched).sub(i.qtyReceived) }))
       .filter((l) => l.remaining.gt(0));
-    const lines = receivable.map((l) => ({
-      productId: l.item.productId, variantId: l.item.variantId, quantity: l.remaining, unitCost: l.item.dispatchUnitCost, lotId: l.item.lotId,
+    const dispatchMovements = await this.prisma.inventoryMovement.findMany({
+      where: { organizationId, referenceType: 'stock_transfer', referenceId: transfer.id, movementType: MovementType.TRANSFER_OUT },
+      orderBy: { postedAt: 'asc' },
+    });
+    const lines = await Promise.all(receivable.map(async (l, k) => {
+      const dispatchMovement = dispatchMovements[k];
+      const basis = dispatchMovement
+        ? await this.costing.basisFromMovementInTx(this.prisma, organizationId, dispatchMovement.id)
+        : [];
+      return {
+        productId: l.item.productId, variantId: l.item.variantId, quantity: l.remaining,
+        unitCost: l.item.dispatchUnitCost, lotId: l.item.lotId,
+        ...(basis.length > 0 ? { costBasis: basis } : {}),
+      };
     }));
 
     if (lines.length === 0) throw new BadRequestException('Nothing in transit to receive');

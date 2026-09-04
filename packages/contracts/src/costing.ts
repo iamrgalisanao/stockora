@@ -29,6 +29,8 @@ export interface CostLayerResponse {
   unitCost: string;
   receivedAt: string;
   status: CostLayerStatus;
+  remainingValue?: string; // gated by cost.view
+  sourceDocument?: CostDocumentRef | null;
 }
 
 export interface CostLayerConsumptionResponse {
@@ -38,6 +40,95 @@ export interface CostLayerConsumptionResponse {
   quantity: string;
   unitCost: string;
   extendedCost: string;
+}
+
+export interface CostDocumentRef {
+  type: string;
+  id: string | null;
+  number: string | null;
+}
+
+export interface CostLayerTraceResponse {
+  layer: CostLayerResponse;
+  sourceMovement: {
+    id: string;
+    txnNumber: string;
+    movementType: string;
+    referenceType: string | null;
+    referenceId: string | null;
+    postedAt: string;
+  };
+  sourceDocument: CostDocumentRef | null;
+}
+
+export interface CostLayerConsumptionTraceResponse extends CostLayerConsumptionResponse {
+  layerReceivedAt: string;
+  layerSourceMovementId: string;
+  layerSourceDocument: CostDocumentRef | null;
+}
+
+export interface MovementCostDetailResponse {
+  movement: {
+    id: string;
+    txnNumber: string;
+    movementType: string;
+    productId: string;
+    productSku: string;
+    warehouseId: string;
+    warehouseCode: string;
+    quantity: string;
+    unitCost: string;
+    totalCost: string;
+    referenceType: string | null;
+    referenceId: string | null;
+    postedAt: string;
+  };
+  sourceDocument: CostDocumentRef | null;
+  consumptions: CostLayerConsumptionTraceResponse[];
+}
+
+export interface TransferCostTraceResponse {
+  transfer: CostDocumentRef;
+  lines: Array<{
+    productId: string;
+    productSku: string;
+    quantity: string;
+    sourceMovementId: string;
+    destinationMovementId: string | null;
+    sourceConsumptions: CostLayerConsumptionTraceResponse[];
+    destinationLayers: CostLayerResponse[];
+  }>;
+}
+
+export interface ReturnCostTraceResponse {
+  return: CostDocumentRef;
+  lines: Array<{
+    productId: string;
+    productSku: string;
+    serialNumbers: string[];
+    receiptMovementId: string | null;
+    originalIssueMovements: Array<{ serialNumber: string; movement: MovementCostDetailResponse['movement'] | null }>;
+    restoredLayers: CostLayerResponse[];
+  }>;
+}
+
+export interface FifoCogsReportResponse {
+  from: string | null;
+  to: string | null;
+  totalCogs: string;
+  rows: Array<{
+    movementId: string;
+    txnNumber: string;
+    movementType: string;
+    productId: string;
+    productSku: string;
+    warehouseId: string;
+    warehouseCode: string;
+    quantity: string;
+    totalCost: string;
+    postedAt: string;
+    sourceDocument: CostDocumentRef | null;
+  }>;
 }
 
 /** WAC-vs-FIFO valuation for one (product, variant, warehouse) scope. */

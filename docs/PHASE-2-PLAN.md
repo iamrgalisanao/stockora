@@ -11,7 +11,7 @@ Invariants: [adr/0001-inventory-invariants.md](adr/0001-inventory-invariants.md)
 | **2A — Operational Readiness** | Deployable to real customers | Master-data UIs, barcode/global-search resolver, audit viewer, CSV import/export, security hardening |
 | **2B — Stock Commitment & Reverse Logistics** | Complete the lifecycle | Reservations (aggregate), Returns + disposition + quarantine |
 | **2C — Traceability** | Regulated / perishable | Batch/lot, expiry + FEFO (allocation policy), cycle-count scheduler, inventory-position model |
-| **2D — Intelligence & Scale** | Automation & optimization | Events/outbox, notifications, serial tracking, supplier analytics, FIFO costing, mobile scanner PWA |
+| **2D — Intelligence & Scale** | Automation & optimization | Events/outbox, notifications, serial tracking, supplier analytics, FIFO costing, mobile scanner PWA with offline command journal |
 
 ## Ordered backlog
 
@@ -29,10 +29,10 @@ Invariants: [adr/0001-inventory-invariants.md](adr/0001-inventory-invariants.md)
 | 10 | Expiry + FEFO | 2C | Builds on lots |
 | 11 | Cycle-count scheduler | 2C | Warehouse accuracy |
 | 12 | Notifications | 2D | Powered by events |
-| 13 | Mobile / scanner warehouse UI | 2D | Operational speed |
-| 14 | Serial tracking | 2D | Electronics/assets |
-| 15 | Supplier analytics | 2D | Procurement intelligence |
-| 16 | FIFO costing | 2D | Only when commercially justified |
+| 13 | Serial tracking | 2D | Electronics/assets |
+| 14 | Supplier analytics | 2D | Procurement intelligence |
+| 15 | FIFO costing | 2D | Commercially justified; now complete |
+| 16 | Mobile scanner PWA | 2D | Final Phase 2D item; operational speed under unreliable connectivity; see ADR 0014 |
 
 ## Current gaps this closes (from MVP review)
 - Master data (products/categories/units/brands/suppliers/warehouses/locations) is API/seed-only → 2A #1.
@@ -61,3 +61,25 @@ boundaries, audit, validation, uniqueness, concurrency, and referential integrit
 ## Delivery method
 Continue **thin vertical slices** (backend + UI + tests, verified, committed) per backlog item, each
 respecting the invariants (ADR 0001). Build order follows the table above.
+
+## 2D.6 locked breakdown (accepted 2026-09-04)
+
+Architecture: [ADR 0014 - Mobile Scanner PWA and Offline Command Journal](adr/0014-mobile-scanner-pwa.md).
+Phase plan: [PHASE-2D6-MOBILE-SCANNER-PWA.md](PHASE-2D6-MOBILE-SCANNER-PWA.md).
+
+- **2D.6A - PWA + Device Foundation:** manifest/installability, Workbox/service worker, offline shell,
+  IndexedDB, persistent-storage request, device installation ID, connectivity state, service-worker update UX,
+  Web Locks sync mutex, BroadcastChannel coordination, scanner abstraction, and wake-lock enhancement.
+- **2D.6B - Mobile Workflows:** scanner-first receive, pick/release, transfer, cycle count, and return flows;
+  offline worklist snapshots; shared barcode/lot/serial controls; task claiming.
+- **2D.6C - Offline Command + Conflict Engine:** `PendingCommand`, idempotency keys, dependency ordering,
+  manual/reconnect/background-enhanced sync, server revalidation, conflict contract/inbox, command receipts, and
+  optimistic aggregate versions.
+- **2D.6D - Resilience + Operational Hardening:** offline authorization window, logout/local wipe, IndexedDB
+  migrations, command schema compatibility, service-worker update safety, storage eviction handling,
+  multi-device race tests, network interruption tests, sync telemetry, and compatibility matrix.
+
+**2D.6 Definition of Done:** warehouse operators can use an installable scanner-first mobile PWA to capture
+authorized work during unreliable connectivity, synchronize intent exactly once when the server is reachable,
+resolve explicit conflicts without silent merges, and preserve all inventory, serial, lot, reservation, FEFO,
+and FIFO invariants under multi-device concurrency.

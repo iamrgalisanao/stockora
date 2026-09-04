@@ -5,6 +5,7 @@ import { PERMISSIONS, type DispositionType, type QuarantineBreakdownRow, type Re
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WarehousesService } from '../warehouses/warehouses.service';
+import { CostingService, type CostBasisComponent } from '../inventory/costing.service';
 import { InventoryPostingService } from '../inventory/inventory-posting.service';
 import { SerialsService } from '../serials/serials.service';
 import type { RequestUser } from '../common/request-user';
@@ -54,6 +55,7 @@ export class ReturnsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly warehouses: WarehousesService,
+    private readonly costing: CostingService,
     private readonly posting: InventoryPostingService,
     private readonly serials: SerialsService,
   ) {}
@@ -211,6 +213,39 @@ export class ReturnsService {
 
     // Post RETURN_RECEIPT movements FIRST (idempotency-keyed so a retry never double-raises quarantine),
     // then persist received quantities + status — the same order the receiving flow uses.
+    // FIFO return receipt requires attributable historical cost basis. Serialized returns restore the
+    // original issued basis; untraceable FIFO returns are rejected by posting until an explicit valuation
+    // source is provided.
+    const costBasisByLine = new Map<string, CostBasisComponent[]>();
+    for (const r of postable) {
+      if (r.line.serialNumbers.length === 0) continue;
+      const strategy = await this.costing.strategyFor(this.prisma, organizationId, r.line.productId);
+      if (strategy !== 'FIFO') continue;
+      const serials = await this.prisma.inventorySerial.findMany({
+        where: {
+          organizationId,
+          productId: r.line.productId,
+          variantId: r.line.variantId,
+          serialNumber: { in: r.line.serialNumbers },
+        },
+        select: { serialNumber: true, lastMovementId: true },
+      });
+      const bySerial = new Map(serials.map((s) => [s.serialNumber, s]));
+      const basis: CostBasisComponent[] = [];
+      for (const sn of r.line.serialNumbers) {
+        const issuedMovementId = bySerial.get(sn)?.lastMovementId;
+        if (!issuedMovementId) {
+          throw new BadRequestException('FIFO serialized returns require a traceable original issue movement');
+        }
+        const one = await this.costing.basisAllocatedFromMovementInTx(this.prisma, organizationId, issuedMovementId, D(1));
+        if (!one) {
+          throw new BadRequestException('FIFO serialized returns require a traceable original issue cost basis');
+        }
+        basis.push(...one);
+      }
+      costBasisByLine.set(r.line.id, basis);
+    }
+
     const movements = await this.posting.returnReceipt(
       {
         organizationId,
@@ -227,6 +262,7 @@ export class ReturnsService {
           quantity: r.qty,
           locationId: r.line.locationId,
           lotId: r.line.lotId, // intake lands in quarantine under the recognized lot (ADR 0007)
+          costBasis: costBasisByLine.get(r.line.id),
         })),
       },
     );

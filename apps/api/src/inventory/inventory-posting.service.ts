@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma, MovementType, InventoryMovement } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CostingService, type FifoAllocation } from './costing.service';
+import { CostingService, type CostBasisComponent, type FifoAllocation } from './costing.service';
 import {
   BucketDeltas,
   D,
@@ -25,6 +25,8 @@ export interface StockLine {
   lotId?: string | null;
   /** Override the default bucket deltas — e.g. consuming a reservation drops on_hand AND reserved. */
   deltas?: BucketDeltas;
+  /** FIFO basis for preserved/restored inflows such as transfer receive or traceable return receipt. */
+  costBasis?: CostBasisComponent[];
 }
 
 export interface PostContext {
@@ -47,6 +49,7 @@ interface MovementSpec {
   unitCost?: Dec | null;
   lotId?: string | null;
   deltas?: BucketDeltas;
+  costBasis?: CostBasisComponent[];
   referenceType?: string | null;
   referenceId?: string | null;
   idempotencyKey?: string | null;
@@ -167,6 +170,7 @@ export class InventoryPostingService {
       unitCost: input.line.unitCost != null ? D(input.line.unitCost) : null,
       lotId: input.line.lotId ?? null,
       deltas: input.line.deltas,
+      costBasis: input.line.costBasis,
       referenceType: input.referenceType,
       referenceId: input.referenceId,
       idempotencyKey: ctx.idempotencyKey ?? null,
@@ -258,6 +262,7 @@ export class InventoryPostingService {
         unitCost: line.unitCost != null ? D(line.unitCost) : null,
         lotId: line.lotId ?? null,
         deltas: { onHand: qty, reserved: ZERO, inTransit: ZERO, quarantined: ZERO, damaged: ZERO },
+        costBasis: line.costBasis,
         referenceType: 'stock_transfer',
         referenceId: ref,
         reason: ctx.reason ?? null,
@@ -334,6 +339,7 @@ export class InventoryPostingService {
       unitCost: line.unitCost != null ? D(line.unitCost) : null,
       lotId: line.lotId ?? null,
       deltas: line.deltas,
+      costBasis: line.costBasis,
       referenceType,
       referenceId: ref,
       // Only the first movement carries the idempotency key (unique per org).
@@ -480,14 +486,21 @@ export class InventoryPostingService {
       }
     }
 
+    const strategy = await this.costing.strategyFor(tx, ctx.organizationId, spec.productId);
+    if (strategy === 'FIFO' && deltas.onHand.gt(0) && !spec.costBasis && this.costing.explicitCostInflow(spec.movementType) && spec.unitCost === null) {
+      throw new BadRequestException('FIFO positive inflows require an explicit unit cost or restored cost basis');
+    }
+    if (strategy === 'FIFO' && deltas.onHand.gt(0) && !spec.costBasis && !this.costing.explicitCostInflow(spec.movementType)) {
+      throw new BadRequestException('FIFO positive inflows require a preserved/restored cost basis or an approved valuation source');
+    }
+
     // Costing. WAC (moving weighted average) is always computed and keeps `avgCost` maintained. Under a FIFO
-    // strategy, an outbound release is instead valued by consuming cost layers oldest-first (ADR 0013 §4).
+    // strategy, value outflows consume cost layers oldest-first (ADR 0013 §4, §7).
     const wac = this.computeCost(bal, deltas.onHand, spec.unitCost ?? null);
     let unitCost = wac.unitCost;
     let totalCost = wac.totalCost;
     const newAvg = wac.newAvg;
 
-    const strategy = await this.costing.strategyFor(tx, ctx.organizationId, spec.productId);
     let fifoAllocations: FifoAllocation[] | null = null;
     if (strategy === 'FIFO' && this.costing.consumesLayer(spec.movementType) && deltas.onHand.lt(0)) {
       const cogs = await this.costing.consumeFifoInTx(tx, ctx.organizationId, {
@@ -543,10 +556,11 @@ export class InventoryPostingService {
 
     // FIFO valuation state (ADR 0013): open a layer for an inflow, or record the consumed layers for an outflow.
     if (strategy === 'FIFO') {
-      if (this.costing.opensLayer(spec.movementType) && deltas.onHand.gt(0)) {
-        await this.costing.openLayerInTx(tx, ctx.organizationId, {
+      if (deltas.onHand.gt(0)) {
+        const basis = spec.costBasis ?? [{ quantity: deltas.onHand, unitCost }];
+        await this.costing.openLayersInTx(tx, ctx.organizationId, {
           productId: spec.productId, variantKey, warehouseId: spec.warehouseId, sourceMovementId: movement.id,
-          quantity: deltas.onHand, unitCost, receivedAt: movement.postedAt,
+          basis, receivedAt: movement.postedAt,
         });
       } else if (fifoAllocations) {
         await this.costing.recordConsumptionsInTx(tx, ctx.organizationId, movement.id, fifoAllocations);

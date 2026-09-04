@@ -13,17 +13,22 @@ import { CostLayerStatus, MovementType } from '@prisma/client';
 import {
   BalanceResponse,
   type CostLayerConsumptionResponse,
+  type CostLayerTraceResponse,
   type CostLayerResponse,
   type CostValuationRow,
   type CostingPolicyResponse,
   type CostingStrategy,
+  type FifoCogsReportResponse,
   InventoryPositionRow,
+  type MovementCostDetailResponse,
   MovementResponse,
   PERMISSIONS,
   POSITION_FILTERS,
   PositionFilter,
   ReconciliationResult,
+  type ReturnCostTraceResponse,
   StockCardResponse,
+  type TransferCostTraceResponse,
 } from '@iw/contracts';
 import { CurrentUser, RequirePermissions } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
@@ -64,8 +69,10 @@ export class InventoryController {
     @Query('productId') productId?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('status') status?: CostLayerStatus,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ): Promise<CostLayerResponse[]> {
-    return this.costing.listLayers(user.organizationId, user, { productId, warehouseId, status });
+    return this.costing.listLayers(user.organizationId, user, { productId, warehouseId, status, from, to });
   }
 
   @RequirePermissions(PERMISSIONS.VALUATION_VIEW)
@@ -81,7 +88,43 @@ export class InventoryController {
   @RequirePermissions(PERMISSIONS.COST_VIEW)
   @Get('movements/:id/cost-layers')
   movementConsumptions(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<CostLayerConsumptionResponse[]> {
-    return this.costing.consumptionsForMovement(user.organizationId, id);
+    return this.costing.consumptionsForMovement(user.organizationId, user, id);
+  }
+
+  @RequirePermissions(PERMISSIONS.COST_VIEW)
+  @Get('cost-layers/:id/trace')
+  costLayerTrace(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<CostLayerTraceResponse> {
+    return this.costing.layerTrace(user.organizationId, user, id);
+  }
+
+  @RequirePermissions(PERMISSIONS.COST_VIEW)
+  @Get('movements/:id/cost-detail')
+  movementCostDetail(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<MovementCostDetailResponse> {
+    return this.costing.movementCostDetail(user.organizationId, user, id);
+  }
+
+  @RequirePermissions(PERMISSIONS.COST_VIEW)
+  @Get('fifo-cogs')
+  fifoCogs(
+    @CurrentUser() user: RequestUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('productId') productId?: string,
+    @Query('warehouseId') warehouseId?: string,
+  ): Promise<FifoCogsReportResponse> {
+    return this.costing.fifoCogsReport(user.organizationId, user, { from, to, productId, warehouseId });
+  }
+
+  @RequirePermissions(PERMISSIONS.COST_VIEW)
+  @Get('transfers/:id/cost-trace')
+  transferCostTrace(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<TransferCostTraceResponse> {
+    return this.costing.transferTrace(user.organizationId, user, id);
+  }
+
+  @RequirePermissions(PERMISSIONS.COST_VIEW)
+  @Get('returns/:id/cost-trace')
+  returnCostTrace(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string): Promise<ReturnCostTraceResponse> {
+    return this.costing.returnTrace(user.organizationId, user, id);
   }
 
   // ---- queries ----
