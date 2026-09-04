@@ -16,6 +16,7 @@ import {
   idbClearAll,
   isSyncLockHeld,
   listCommands,
+  offlineAuthState,
   pendingCount,
   preferredAdapter,
   registerServiceWorker,
@@ -61,6 +62,10 @@ export default function MobileFoundationPage() {
   const [swReady, setSwReady] = useState<boolean | null>(null);
   const [recent, setRecent] = useState<PendingCommand[]>([]);
   const [busy, setBusy] = useState(false);
+  const [oldestQueuedAt, setOldestQueuedAt] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [authExpiresAt, setAuthExpiresAt] = useState<number | null>(null);
+  const [authOk, setAuthOk] = useState<boolean | null>(null);
 
   const connRef = useRef<ConnectivityController | null>(null);
   const channelRef = useRef<MobileChannel | null>(null);
@@ -72,6 +77,11 @@ export default function MobileFoundationPage() {
       setPending(p);
       setConflicts(c);
       setRecent(list.slice(0, 5));
+      // Support metrics: oldest still-queued command + most recent successful sync.
+      const queued = list.filter((x) => x.state === 'QUEUED' || x.state === 'BLOCKED').map((x) => x.capturedAt).sort();
+      setOldestQueuedAt(queued[0] ?? null);
+      const synced = list.filter((x) => x.state === 'SYNCED' && x.receipt?.acceptedAt).map((x) => x.receipt!.acceptedAt).sort();
+      setLastSyncedAt(synced.length ? synced[synced.length - 1]! : null);
     } catch {
       /* IndexedDB unavailable — leave zeros */
     }
@@ -88,6 +98,7 @@ export default function MobileFoundationPage() {
     estimateStorage().then(setStorage).catch(() => {});
     refreshJournal();
     isSyncLockHeld().then(setSyncOwner).catch(() => {});
+    offlineAuthState().then((s) => { setAuthOk(s.ok); setAuthExpiresAt(s.expiresAt); }).catch(() => {});
 
     // Service worker + safe-update detection.
     registerServiceWorker((handle) => setUpdate(handle))
@@ -261,6 +272,18 @@ export default function MobileFoundationPage() {
           <button className="m-btn secondary" disabled={busy} onClick={becomeOwner}>Become sync owner</button>
         </div>
         <button className="m-btn secondary" disabled={busy} onClick={clearJournal}>Clear local journal (handover wipe)</button>
+      </div>
+
+      <div className="m-card">
+        <h2>Sync health</h2>
+        <div className="m-row">
+          <span className="k">Offline authorization</span>
+          <span className="v"><span className={`m-pill ${authOk ? 'ok' : authOk === false ? 'bad' : 'neutral'}`}>{authOk == null ? '…' : authOk ? 'valid' : 'expired'}</span></span>
+        </div>
+        {authExpiresAt && <div className="m-row"><span className="k">Window resets by</span><span className="v">{new Date(authExpiresAt).toLocaleString()}</span></div>}
+        <div className="m-row"><span className="k">Last successful sync</span><span className="v">{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : '—'}</span></div>
+        <div className="m-row"><span className="k">Oldest queued</span><span className="v">{oldestQueuedAt ? new Date(oldestQueuedAt).toLocaleString() : '—'}</span></div>
+        <div className="m-row"><span className="k">App / schema build</span><span className="v">{APP_VERSION} / {health?.commandSchemaVersion ?? '—'}</span></div>
       </div>
 
       <div className="m-card">

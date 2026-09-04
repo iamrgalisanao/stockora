@@ -8,6 +8,7 @@ import { ReturnsModule } from '../returns/returns.module';
 import { MobileController } from './mobile.controller';
 import { MobileWorkService } from './mobile-work.service';
 import { MobileCommandService } from './mobile-command.service';
+import { MobileDiagnosticsService } from './mobile-diagnostics.service';
 
 /**
  * Mobile Scanner PWA backend (Phase 2D.6, ADR 0014). Worklist read models + advisory claims (2D.6B) and the
@@ -18,6 +19,6 @@ import { MobileCommandService } from './mobile-command.service';
 @Module({
   imports: [SerialsModule, ReceivingModule, ReleasesModule, TransfersModule, CountsModule, ReturnsModule],
   controllers: [MobileController],
-  providers: [MobileWorkService, MobileCommandService],
+  providers: [MobileWorkService, MobileCommandService, MobileDiagnosticsService],
 })
 export class MobileModule {}

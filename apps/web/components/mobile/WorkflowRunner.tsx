@@ -12,9 +12,12 @@ import type {
 import {
   buildCommand,
   enqueueCommand,
+  feedbackError,
+  feedbackSuccess,
   getDeviceId,
   getIdentity,
   loadWorklist,
+  offlineAuthState,
   openSession,
   saveSession,
   submitCommand,
@@ -103,6 +106,7 @@ export function WorkflowRunner({ workType }: { workType: MobileWorkType }) {
   const [selected, setSelected] = useState<{ item: MobileWorkItem; session: MobileWorkSession } | null>(null);
   const [result, setResult] = useState<PendingCommand | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [readOnly, setReadOnly] = useState(false); // offline-authorization window elapsed
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -115,6 +119,7 @@ export function WorkflowRunner({ workType }: { workType: MobileWorkType }) {
   useEffect(() => {
     getDeviceId().then(setDeviceId).catch(() => {});
     getIdentity().then(setIdentity).catch(() => {});
+    offlineAuthState().then((s) => setReadOnly(!s.ok)).catch(() => {});
     refresh();
   }, [refresh]);
 
@@ -132,7 +137,7 @@ export function WorkflowRunner({ workType }: { workType: MobileWorkType }) {
   }, [selected]);
 
   const submit = useCallback(async () => {
-    if (!selected || !identity || !deviceId) return;
+    if (!selected || !identity || !deviceId || readOnly) return; // read-only past the offline-auth window
     setSubmitting(true);
     try {
       const { item, session } = selected;
@@ -156,22 +161,31 @@ export function WorkflowRunner({ workType }: { workType: MobileWorkType }) {
       await enqueueCommand(command); // QUEUED — shown PENDING, never SUCCESS
       const after = await submitCommand(command); // online: submit through; offline: stays queued
       setResult(after);
+      if (after.state === 'SYNCED') feedbackSuccess();
+      else if (after.state === 'CONFLICT' || after.state === 'REJECTED' || after.state === 'FAILED') feedbackError();
     } finally {
       setSubmitting(false);
     }
-  }, [selected, identity, deviceId]);
+  }, [selected, identity, deviceId, readOnly]);
 
   if (loading) return <p className="m-sub">Loading work…</p>;
 
   // ---- capture view ----
   if (selected) {
     const { item, session } = selected;
-    const submittable = canSubmit(item, session) && !result;
+    const submittable = canSubmit(item, session) && !result && !readOnly;
     return (
       <div>
         <button className="m-link" onClick={() => { setSelected(null); setResult(null); refresh(); }}>← Back to list</button>
         <p className="m-title" style={{ marginTop: 8 }}>{TITLE[workType]} · {item.reference}</p>
         <p className="m-sub">{item.warehouseCode} · {item.status}{item.subAction ? ` · ${item.subAction}` : ''}{item.blind ? ' · blind count' : ''}</p>
+
+        {readOnly && (
+          <div className="m-banner">
+            Offline authorization expired — capture is read-only until you reconnect and your access is
+            revalidated. Anything already captured stays safe in the queue.
+          </div>
+        )}
 
         {result && (
           <div className={`m-banner ${result.state === 'SYNCED' ? 'info' : ''}`}>

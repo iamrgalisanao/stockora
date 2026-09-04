@@ -16,6 +16,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
+    "db:verify": "node scripts/verify-migrations.mjs",
     "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "prisma": {

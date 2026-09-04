@@ -293,6 +293,25 @@ export interface MobileHealthResponse {
   minAppVersion: string;
   /** Current envelope schema the server understands (client compatibility gate). */
   commandSchemaVersion: number;
+  /**
+   * How long (seconds) the device may keep operating offline on this authorization snapshot before capture
+   * becomes read-only (ADR 0014 §12). Measured from the last successful probe; on reconnect the probe
+   * revalidates the session + scope, so a fresh 200 resets the window.
+   */
+  offlineAuthWindowSeconds: number;
+}
+
+/** Support/telemetry snapshot of mobile command sync health (2D.6D). Server-side aggregate, org-scoped. */
+export interface MobileDiagnostics {
+  generatedAt: string;
+  totals: { received: number; applied: number; conflict: number; rejected: number; acknowledged: number; blocked: number };
+  conflictsByCode: Record<string, number>;
+  rejectionsByCode: Record<string, number>;
+  lastAppliedAt: string | null;
+  oldestUnappliedAt: string | null;
+  avgApplyLatencyMs: number | null;
+  /** Per-device breakdown — answers "which device, what happened, when did it last sync". */
+  devices: Array<{ deviceId: string; applied: number; conflict: number; rejected: number; lastAppliedAt: string | null }>;
 }
 
 /** Which scanner input paths are usable on this device, from feature detection (ADR 0014 §10). */

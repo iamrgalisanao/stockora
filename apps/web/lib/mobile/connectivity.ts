@@ -6,6 +6,7 @@
 
 import type { ConnectivityState, MobileHealthResponse } from '@iw/contracts';
 import { API_URL, getToken } from '../api';
+import { recordAuthOk } from './offline-auth';
 
 export interface ConnectivitySnapshot {
   state: ConnectivityState;
@@ -98,6 +99,8 @@ export class ConnectivityController {
       .then(({ ok, health, rttMs }) => {
         const now = Date.now();
         if (ok) {
+          // A successful authenticated probe resets the offline-authorization window (ADR 0014 §12).
+          if (health) void recordAuthOk(health);
           this.emit({ state: rttMs > DEGRADED_RTT_MS ? 'DEGRADED' : 'ONLINE', lastProbeAt: now, lastOkAt: now, health, rttMs });
         } else {
           this.emit({ ...this.snap, state: 'OFFLINE', lastProbeAt: now, rttMs });

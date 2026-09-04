@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isDuplicateScan, useLastScan, useScannerInput } from '../../lib/use-scanner';
-import { detectScannerCapabilities } from '../../lib/mobile';
+import { detectScannerCapabilities, feedbackError, feedbackSuccess } from '../../lib/mobile';
 
 /**
  * Shared scanner control (2D.6B, ADR 0014 §10). One control across every workflow — hardware wedge and
@@ -27,9 +27,10 @@ export function ScannerControl({ onScan, placeholder = 'Scan or type a code', au
   const submit = useCallback((raw: string) => {
     const code = raw.trim();
     if (!code) return;
-    if (isDuplicateScan(code, lastScan.current, Date.now())) { setValue(''); return; }
+    if (isDuplicateScan(code, lastScan.current, Date.now())) { feedbackError(); setValue(''); return; } // duplicate burst
     lastScan.current = { code, at: Date.now() };
     onScan(code);
+    feedbackSuccess();
     setValue('');
     inputRef.current?.focus();
   }, [onScan, lastScan]);

@@ -1,6 +1,6 @@
 # Phase 2D.6 - Mobile Scanner PWA
 
-**Status: In progress — 2D.6A shipped.** Final Phase 2D item. Architecture is locked by
+**Status: COMPLETE — 2D.6A·2D.6B·2D.6C·2D.6D shipped.** Final Phase 2D item, now closed. Architecture is locked by
 [ADR 0014](adr/0014-mobile-scanner-pwa.md): the mobile PWA is an online-authoritative warehouse client with an
 offline command journal, explicit conflicts, and progressive enhancement for platform features. ADR 0014
 explicitly locks the operational rules (server sole authority; first valid committed transaction wins; sync
@@ -111,27 +111,62 @@ movements, overdraw inventory, reuse serials, bypass warehouse scope, or overwri
 `mobile-sync.e2e-spec.ts` (8 concurrency scenarios incl. the mandatory serial race + quantity shortage, each
 finishing with inventory/serial reconcile OK) and a live UI smoke of the serial race end to end.
 
-### 2D.6D - Resilience + Operational Hardening
+### 2D.6D - Resilience + Operational Hardening ✅ Shipped
 
 ```text
-offline authorization window
-offline read-only expiry
-logout/local wipe
-IndexedDB schema migrations
-client command schema compatibility
-service-worker update safety
-storage persistence/eviction handling
-multi-device race tests
-network interruption tests
-sync telemetry
-mobile sync health surface
-browser/device compatibility matrix
+offline authorization window     health probe advertises offlineAuthWindowSeconds; client records last auth on
+                                 every ONLINE probe; capture goes READ-ONLY past the window (lib/mobile/offline-auth)
+account/scope revalidation       JWT guard rechecks membership/user/org status (401); processor rechecks permission
+                                 + warehouse scope on every applied command (REJECTED, no mutation)
+logout / local wipe / handover   wipeUserData() on sign-out; a different user on the device wipes the prior user's
+                                 journal on identity refresh (no cross-user leakage) — device id preserved
+IndexedDB migrations             versioned, additive (v1->v2 preserved the command queue); queued work survives upgrade
+client schema/version gate       below-min appVersion / unknown schema -> REJECTED SCHEMA_UNSUPPORTED (never applied)
+service-worker update safety     update surfaced, activation gated on an empty queue; cache-version bump on deploy
+storage persistence/eviction     persist() requested; a not-persisted warning banner; app stays correct if evicted
+exactly-once under churn         repeated reconnect/disconnect (same key) -> one mutation, same receipt (2D.6D test)
+sync telemetry                   GET /mobile/diagnostics (org-scoped, AUDIT_VIEW): totals, byCode, per-device, last sync
+mobile sync health surface       /m/status "Sync health" — offline-auth, window reset, last sync, oldest queued
+warehouse UX hardening           larger glove-friendly targets; audible + haptic scan/submit feedback; unambiguous states
+migration replay CI gate         `npm run db:verify` replays all migrations on a fresh shadow DB (catches ordering bugs)
 ```
 
-Definition of done:
+Definition of done — **met**:
 
-> Unsynced work survives supported app upgrades and restart/interruption paths, authorization is rechecked on
-> sync, revoked or stale work fails explicitly, and operational health is observable by administrators.
+> The Mobile Scanner PWA remains safe and recoverable across offline operation, authentication changes,
+> browser/app upgrades, storage pressure, intermittent connectivity, device handover, and unsupported optional
+> browser features; operators can always distinguish local intent from authoritative server state and recover
+> without duplicating or corrupting inventory.
+
+Coverage: `apps/api/test/mobile-hardening.e2e-spec.ts` (6) — offline-auth window signal, compatibility gate,
+warehouse-scope revocation on sync (no mutation), disabled-account 401, exactly-once under repeated reconnects,
+org-scoped diagnostics gated to admins. Migration replay verified via `npm run db:verify` (the ordering bug from
+2D.6C would fail this gate). Live UI smoke: home survivability banners, offline-auth state, Sync-health surface,
+no hydration errors.
+
+#### Compatibility matrix
+
+| Surface | Baseline (guaranteed) | Feature-detected enhancements |
+| --- | --- | --- |
+| Android Chrome | install, offline shell, IndexedDB, Web Locks, wedge + manual | camera (BarcodeDetector), Background Sync, Wake Lock, persistent storage |
+| iOS Safari (installed PWA) | install, offline shell, IndexedDB, wedge + manual | camera (getUserMedia), Wake Lock; NO Background Sync, NO Web Locks (falls back to single-context + server idempotency) |
+| Desktop Chrome / Edge | full: install, Web Locks, BroadcastChannel, persistent storage | camera, Wake Lock |
+| Hardware wedge scanners | always (keystrokes into the focused field) | — |
+
+Camera, Background Sync, Wake Lock, and persistent storage are progressive enhancements — the wedge/manual path
+and foreground/manual sync always work without them.
+
+#### Recovery workflows
+
+| Situation | Operator-facing recovery |
+| --- | --- |
+| Stale client version | Home banner "out of date — reload to update"; server also REJECTs its commands |
+| Expired offline auth | Read-only banner in capture + home; reconnect revalidates and resets the window |
+| Lost local storage (eviction) | Not-persisted warning up front; queue small; app renders correctly with an empty journal |
+| Stuck queue | Pending Sync "Sync now" (Web-Locks single owner) + per-command retry/discard |
+| Blocked dependency | BLOCKED shown in Pending; auto-clears once the predecessor applies |
+| Conflict / rejection | Conflict Inbox: Rescan / Reallocate / Refresh / Retry / Discard — never force/overwrite |
+| Sign-out / device handover | "Sign out & wipe this device"; a new user's login wipes the prior user's local work |
 
 ## Explicit Non-Goals
 

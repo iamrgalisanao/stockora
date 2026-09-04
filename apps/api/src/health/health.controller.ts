@@ -2,7 +2,7 @@ import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import type { MobileHealthResponse } from '@iw/contracts';
 import { CurrentUser, Public } from '../common/decorators';
 import type { RequestUser } from '../common/request-user';
-import { COMMAND_SCHEMA_VERSION, MIN_APP_VERSION } from '../common/mobile.constants';
+import { COMMAND_SCHEMA_VERSION, MIN_APP_VERSION, OFFLINE_AUTH_WINDOW_SECONDS } from '../common/mobile.constants';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('health')
@@ -57,6 +57,7 @@ export class HealthController {
       warehouseScope: user.warehouseScope,
       minAppVersion: MIN_APP_VERSION,
       commandSchemaVersion: COMMAND_SCHEMA_VERSION,
+      offlineAuthWindowSeconds: OFFLINE_AUTH_WINDOW_SECONDS,
     };
   }
 }
