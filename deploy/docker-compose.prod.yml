@@ -1,0 +1,88 @@
+# Stockora — production stack (single subdomain, /api path routing).
+#
+#   Web : https://${APP_HOST}/         -> web  (Next.js, :3000)
+#   API : https://${APP_HOST}/api      -> api  (NestJS, :4000, serves under /api)
+#   DB  : postgres (internal only)
+#
+# Routing/TLS is done by your EXISTING Traefik via container labels. Fill the
+# PROXY_NETWORK and CERT_RESOLVER values in deploy/.env.prod (see the guide:
+# docs/DEPLOY-HOSTINGER.md). Run from the repo root:
+#
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d --build
+# ---------------------------------------------------------------------------
+name: stockora
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK}       # your Traefik's docker network (detect it — see guide)
+  internal:
+    driver: bridge
+
+volumes:
+  stockora_pgdata:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - stockora_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: stockora-api:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal, proxy]
+    environment:
+      NODE_ENV: production
+      API_PORT: "4000"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      CORS_ORIGIN: ${APP_URL}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${PROXY_NETWORK}"
+      # /api -> API. Higher priority than the web catch-all so it wins.
+      - "traefik.http.routers.stockora-api.rule=Host(`${APP_HOST}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.stockora-api.entrypoints=websecure"
+      - "traefik.http.routers.stockora-api.tls=true"
+      - "traefik.http.routers.stockora-api.tls.certresolver=${CERT_RESOLVER}"
+      - "traefik.http.routers.stockora-api.priority=100"
+      - "traefik.http.services.stockora-api.loadbalancer.server.port=4000"
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the client bundle at build time — the public origin only.
+        NEXT_PUBLIC_API_URL: ${APP_URL}
+    image: stockora-web:latest
+    restart: unless-stopped
+    networks: [proxy]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${PROXY_NETWORK}"
+      - "traefik.http.routers.stockora-web.rule=Host(`${APP_HOST}`)"
+      - "traefik.http.routers.stockora-web.entrypoints=websecure"
+      - "traefik.http.routers.stockora-web.tls=true"
+      - "traefik.http.routers.stockora-web.tls.certresolver=${CERT_RESOLVER}"
+      - "traefik.http.routers.stockora-web.priority=1"
+      - "traefik.http.services.stockora-web.loadbalancer.server.port=3000"

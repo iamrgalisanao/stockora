@@ -1,0 +1,17 @@
+# Keep build context small and never ship local secrets / build output.
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/coverage
+**/.git
+.git
+.github
+**/*.log
+npm-debug.log*
+.vscode
+.idea
+# Secrets — env is injected at runtime by compose, never baked into an image.
+**/.env
+**/.env.*
+!**/.env.example
