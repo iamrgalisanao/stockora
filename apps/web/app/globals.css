@@ -244,11 +244,31 @@ table.grid td.num, table.grid th.num { text-align: right; font-family: var(--f-m
 @media (max-width: 1040px){ .dash-grid, .dash-grid.attn { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 620px){ .dash-grid, .dash-grid.attn { grid-template-columns: 1fr; } }
 
-.metric { position: relative; overflow: hidden; }
-.metric .lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
-.metric .val { font-family: var(--f-display); font-weight: 600; font-size: 30px; letter-spacing: -.02em; color: var(--ice); margin: 10px 0 4px; font-variant-numeric: tabular-nums; }
-.metric .sub { font-size: 12.5px; color: var(--muted); }
+/* Headline metric card: per-card accent (--m) drives a top glow line, a corner
+   icon tile, and an ambient accent wave on the floor. */
+.metric { position: relative; overflow: hidden; min-height: 140px; padding-bottom: 34px; }
+.metric::before { /* accent hairline across the top edge */
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; opacity: .65;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--m) 70%, transparent) 20%, color-mix(in srgb, var(--m) 70%, transparent) 80%, transparent);
+}
+.metric::after { /* soft accent bloom from the top-left corner */
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(135% 95% at 0% -12%, color-mix(in srgb, var(--m) 15%, transparent), transparent 55%);
+}
+.metric-head { position: relative; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.metric .lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); padding-top: 5px; }
+.metric-ico {
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0;
+  color: var(--m);
+  background: color-mix(in srgb, var(--m) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--m) 34%, transparent);
+  box-shadow: 0 8px 18px -12px var(--m);
+}
+.metric-ico svg { width: 18px; height: 18px; }
+.metric .val { position: relative; z-index: 2; font-family: var(--f-display); font-weight: 600; font-size: 30px; letter-spacing: -.02em; color: var(--ice); margin: 14px 0 3px; font-variant-numeric: tabular-nums; }
+.metric .sub { position: relative; z-index: 2; font-size: 12.5px; color: var(--muted); }
 .metric .sub b { color: var(--text); font-weight: 500; font-family: var(--f-mono); }
+.metric .spark { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 50px; z-index: 1; color: var(--m); pointer-events: none; }
 
 .ratio { height: 6px; border-radius: 999px; background: var(--wash-2); margin-top: 14px; overflow: hidden; }
 .ratio > i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #3fbfa3, #54b7ac); }
