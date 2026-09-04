@@ -175,7 +175,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <div className="logo">
           <img src="/stockora-logo-light.png" alt="Stockora" className="logo-mark" />
-          <span className="logo-text"><span className="lg-stock">Stock</span><span className="lg-ora">ora</span></span>
+          <span className="logo-wm">
+            <span className="logo-text"><span className="lg-stock">Stock</span><span className="lg-ora">ora</span></span>
+            <span className="logo-tag">Warehouse Intelligence by Abbadev</span>
+          </span>
         </div>
         {NAV.map((g) => {
           const hasActive = g.links.some((l) => pathname === l.href || pathname.startsWith(`${l.href}/`));
