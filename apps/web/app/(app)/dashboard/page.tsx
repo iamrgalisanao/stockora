@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { AuthenticatedUser, DashboardSummary } from '@iw/contracts';
 import { api } from '../../../lib/api';
@@ -38,27 +38,16 @@ export default function DashboardPage() {
 
       {/* Headline metrics */}
       <div className="dash-grid">
-        <div className="card metric">
-          <div className="lbl">Products · SKUs</div>
-          <div className="val">{s.totalSkus.toLocaleString()}</div>
-          <div className="sub">Active catalog items</div>
-        </div>
-        <div className="card metric">
-          <div className="lbl">On hand</div>
-          <div className="val">{onHand.toLocaleString()}</div>
-          <div className="sub"><b>{reserved.toLocaleString()}</b> reserved · <b>{inTransit.toLocaleString()}</b> in transit</div>
-        </div>
-        <div className="card metric">
-          <div className="lbl">Available</div>
-          <div className="val">{available.toLocaleString()}</div>
-          <div className="sub">{availPct}% of on-hand sellable</div>
-          <div className="ratio"><i style={{ width: `${availPct}%` }} /></div>
-        </div>
-        <div className="card metric">
-          <div className="lbl">Inventory value</div>
-          <div className="val">{s.inventoryValue !== undefined ? peso(s.inventoryValue) : '—'}</div>
-          <div className="sub">{s.inventoryValue !== undefined ? 'At current valuation' : 'Requires valuation access'}</div>
-        </div>
+        <Metric accent="#7b53ff" icon="tag" label="Products · SKUs" sparkId="skus" variant="a"
+          value={s.totalSkus.toLocaleString()} sub="Active catalog items" />
+        <Metric accent="#4ea8f5" icon="boxes" label="On hand" sparkId="onhand" variant="b"
+          value={onHand.toLocaleString()}
+          sub={<><b>{reserved.toLocaleString()}</b> reserved · <b>{inTransit.toLocaleString()}</b> in transit</>} />
+        <Metric accent="#3fbfa3" icon="gauge" label="Available" sparkId="avail" variant="a"
+          value={available.toLocaleString()} sub={`${availPct}% of on-hand sellable`} />
+        <Metric accent="#e2b24d" icon="coin" label="Inventory value" sparkId="value" variant="b"
+          value={s.inventoryValue !== undefined ? peso(s.inventoryValue) : '—'}
+          sub={s.inventoryValue !== undefined ? 'At current valuation' : 'Requires valuation access'} />
       </div>
 
       {/* Stock composition — real distribution across states */}
@@ -121,6 +110,61 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Distinct accent glyph per headline metric (matches the sidebar icon language). */
+const METRIC_ICONS: Record<string, string> = {
+  tag: '<path d="M3 3h8l10 10-8 8L3 11Z"/><circle cx="7.5" cy="7.5" r="1.4"/>',
+  boxes: '<path d="M3 8 12 4l9 4-9 4-9-4Z"/><path d="M3 8v8l9 4 9-4V8"/><path d="M12 12v8"/>',
+  gauge: '<path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 15l4-3"/><circle cx="12" cy="15" r="1"/>',
+  coin: '<circle cx="12" cy="12" r="8"/><path d="M12 8v8"/><path d="M14 10c0-1.1-.9-1.6-2-1.6s-2 .5-2 1.6.9 1.5 2 1.5 2 .5 2 1.5-.9 1.6-2 1.6-2-.5-2-1.6"/>',
+};
+
+function MetricIcon({ name }: { name: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: METRIC_ICONS[name] ?? '' }} />
+  );
+}
+
+/**
+ * Ambient accent flourish along the card floor. Deliberately decorative — the
+ * dashboard is a live snapshot with no per-metric time series, so this asserts
+ * no data points (no axis, ticks, or values); it is brand texture, not a chart.
+ */
+function Spark({ id, variant }: { id: string; variant: 'a' | 'b' }) {
+  const line = variant === 'b'
+    ? 'M0 34 C 45 22 80 40 120 30 S 200 40 240 24 S 285 18 300 22'
+    : 'M0 40 C 40 30 72 44 110 32 S 195 18 235 30 S 288 20 300 24';
+  return (
+    <svg className="spark" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={`sg-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="currentColor" stopOpacity="0.30" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L300 60 L0 60 Z`} fill={`url(#sg-${id})`} />
+      <path d={line} fill="none" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function Metric({ accent, icon, label, value, sub, sparkId, variant }: {
+  accent: string; icon: string; label: string; value: ReactNode; sub: ReactNode; sparkId: string; variant: 'a' | 'b';
+}) {
+  return (
+    <div className="card metric" style={{ ['--m' as string]: accent }}>
+      <div className="metric-head">
+        <span className="lbl">{label}</span>
+        <span className="metric-ico"><MetricIcon name={icon} /></span>
+      </div>
+      <div className="val">{value}</div>
+      <div className="sub">{sub}</div>
+      <Spark id={sparkId} variant={variant} />
     </div>
   );
 }
