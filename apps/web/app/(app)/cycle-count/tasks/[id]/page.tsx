@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -31,8 +33,8 @@ export default function CycleCountTaskDetail() {
 
   async function act(fn: () => Promise<CycleCountTaskResponse>) {
     setBusy(true); setError(null);
-    try { setTask(await fn()); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); }
+    try { const t = await fn(); setTask(t); toast.success(`Task ${t.status.replace(/_/g, ' ').toLowerCase()}`); }
+    catch (e) { const m = e instanceof Error ? e.message : 'Action failed'; setError(m); toast.error(m); }
     finally { setBusy(false); }
   }
 
@@ -41,8 +43,9 @@ export default function CycleCountTaskDetail() {
     try {
       const t = await api.cycleCount.start(id);
       setTask(t);
+      toast.success('Count started');
       if (t.physicalCountId) router.push(`/counts/${t.physicalCountId}`);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not start the count'); setBusy(false); }
+    } catch (e) { const m = e instanceof Error ? e.message : 'Could not start the count'; setError(m); toast.error(m); setBusy(false); }
   }
 
   if (error && !task) return <div className="card error">{error}</div>;

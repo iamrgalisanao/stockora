@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -50,9 +52,12 @@ export default function NewReservationPage() {
         lines: payloadLines,
       });
       if (confirmNow) await api.reservations.confirm(created.id);
+      toast.success(confirmNow ? 'Reservation confirmed' : 'Reservation created');
       router.push(`/reservations/${created.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create reservation');
+      const m = e instanceof Error ? e.message : 'Failed to create reservation';
+      setError(m);
+      toast.error(m);
       setSaving(false);
     }
   }

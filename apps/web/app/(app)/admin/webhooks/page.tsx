@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import { NOTIFICATION_TYPES, NOTIFICATION_TYPE_LABELS, type OrganizationWebhookConfigResponse } from '@iw/contracts';
 import { api } from '../../../../lib/api';
@@ -29,15 +31,15 @@ export default function WebhookIntegrationPage() {
       const body: { url: string; enabled: boolean; signingSecret?: string } = { url, enabled };
       if (secret) body.signingSecret = secret;
       const c = await api.notifications.webhook.save(body);
-      setConfig(c); setSecret(''); setMsg('Saved.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Save failed'); }
+      setConfig(c); setSecret(''); setMsg('Saved.'); toast.success('Webhook integration saved');
+    } catch (e) { const m = e instanceof Error ? e.message : 'Save failed'; setError(m); toast.error(m); }
     finally { setBusy(false); }
   }
 
   async function toggleSub(type: string, on: boolean) {
     setBusy(true); setError(null);
-    try { setConfig(await api.notifications.webhook.setSubscription(type, on)); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Update failed'); }
+    try { setConfig(await api.notifications.webhook.setSubscription(type, on)); toast.success(`${type} ${on ? 'subscribed' : 'unsubscribed'}`); }
+    catch (e) { const m = e instanceof Error ? e.message : 'Update failed'; setError(m); toast.error(m); }
     finally { setBusy(false); }
   }
 

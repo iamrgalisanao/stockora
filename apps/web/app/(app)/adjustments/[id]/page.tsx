@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { AdjustmentResponse, AuthenticatedUser } from '@iw/contracts';
@@ -30,9 +32,13 @@ export default function AdjustmentDetailPage() {
     setBusy(true);
     setError(null);
     try {
-      setAdj(await fn());
+      const res = await fn();
+      setAdj(res);
+      toast.success(`Adjustment ${res.status.replace(/_/g, ' ').toLowerCase()}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed');
+      const m = e instanceof Error ? e.message : 'Action failed';
+      setError(m);
+      toast.error(m);
     } finally {
       setBusy(false);
     }

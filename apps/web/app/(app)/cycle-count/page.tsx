@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { AuthenticatedUser, CycleCountMetrics, WarehouseResponse } from '@iw/contracts';
@@ -49,8 +51,8 @@ export default function CycleCountDashboard() {
 
   async function act(fn: () => Promise<unknown>, done: (r: any) => string) {
     setBusy(true); setError(null); setMsg(null);
-    try { setMsg(done(await fn())); load(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); }
+    try { const m = done(await fn()); setMsg(m); toast.success(m); load(); }
+    catch (e) { const em = e instanceof Error ? e.message : 'Action failed'; setError(em); toast.error(em); }
     finally { setBusy(false); }
   }
 

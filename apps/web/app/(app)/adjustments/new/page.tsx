@@ -1,5 +1,7 @@
 'use client';
 
+import { toast } from 'sonner';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AdjustmentDirection, AdjustmentReasonResponse, ProductResponse, WarehouseResponse } from '@iw/contracts';
@@ -58,9 +60,12 @@ export default function NewAdjustmentPage() {
     setBusy(true);
     try {
       const adj = await api.adjustments.create(body);
+      toast.success('Adjustment created');
       router.push(`/adjustments/${adj.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      const m = e instanceof Error ? e.message : 'Something went wrong';
+      setError(m);
+      toast.error(m);
       setBusy(false);
     }
   }
