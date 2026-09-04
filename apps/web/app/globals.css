@@ -20,10 +20,11 @@
   --text: #d1e4fa;
   --muted: #98a6bd;
   --faint: #74809a;
-  /* brand action — the one chromatic accent */
-  --accent: #663af3;
-  --accent-hi: #7b53ff;
-  --accent-tint: rgba(102,58,243,.16);
+  /* brand action — the one chromatic accent (logo gold) */
+  --accent: #f5a623;
+  --accent-hi: #ffbb3d;
+  --accent-tint: rgba(245,166,35,.16);
+  --on-accent: #1b1403;      /* dark ink for text/icons on the gold accent */
   /* operational status layer */
   --accent-2: #3fbfa3;       /* success (teal) — keeps its historical token name */
   --info: #4ea8f5;
@@ -36,7 +37,7 @@
   /* elevation — inset frost + soft cool drop, never paper shadow */
   --el: inset 0 1px 0 rgba(216,236,248,.10), 0 18px 40px -28px rgba(0,0,0,.9);
   --el-hair: inset 0 0 0 1px var(--border);
-  --skywash: linear-gradient(180deg,#d8ecf8 0%,#98c0ef 100%);
+  --skywash: linear-gradient(180deg,#ffd884 0%,#f5a623 100%);
   /* motion — strong custom curves (built-in easings are too weak for UI) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
@@ -118,15 +119,15 @@ button {
   width: 100%;
   padding: 11px 16px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: none;
   border-radius: 999px;
   font-family: var(--f-body);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 14px;
   cursor: pointer;
   transition: transform .14s var(--ease-out), background .15s, box-shadow .15s, opacity .15s;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 10px 26px -12px rgba(102,58,243,.75);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 10px 26px -12px rgba(245,166,35,.6);
 }
 button:hover { background: var(--accent-hi); }
 button:active { transform: scale(0.97); }
@@ -271,8 +272,8 @@ table.grid td.num, table.grid th.num { text-align: right; font-family: var(--f-m
 .badge.muted { color: var(--muted); }
 .badge.danger { color: var(--danger); background: rgba(228,109,76,.15); border-color: rgba(228,109,76,.32); }
 
-.btn { display: inline-block; width: auto; margin: 0; padding: 8px 16px; background: var(--accent); color: #fff; border: none; border-radius: 999px; font-family: var(--f-body); font-weight: 500; cursor: pointer; text-decoration: none; font-size: 13px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 8px 20px -12px rgba(102,58,243,.7); transition: transform .14s var(--ease-out), background .15s; }
-.btn:hover { background: var(--accent-hi); color: #fff; }
+.btn { display: inline-block; width: auto; margin: 0; padding: 8px 16px; background: var(--accent); color: var(--on-accent); border: none; border-radius: 999px; font-family: var(--f-body); font-weight: 600; cursor: pointer; text-decoration: none; font-size: 13px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 8px 20px -12px rgba(245,166,35,.55); transition: transform .14s var(--ease-out), background .15s; }
+.btn:hover { background: var(--accent-hi); color: var(--on-accent); }
 .btn:active { transform: scale(0.97); }
 .btn.secondary { background: var(--wash); border: none; color: var(--text); box-shadow: var(--el-hair); }
 .btn.secondary:hover { background: var(--wash-2); color: var(--ice); }
