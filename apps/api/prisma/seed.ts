@@ -148,9 +148,6 @@ async function seedDemoCatalog(): Promise<void> {
         salesUomId: pcs,
         cost: 2950,
         sellingPrice: 3600,
-        minStock: 10,
-        reorderPoint: 15,
-        reorderQty: 30,
         leadTimeDays: 7,
       },
     });

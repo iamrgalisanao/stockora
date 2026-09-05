@@ -34,9 +34,15 @@ RUN npx turbo run build --filter=@iw/api...
 FROM base AS runtime
 ENV NODE_ENV=production
 # node_modules carries the generated Prisma client, the Prisma CLI (for
-# migrate deploy) and ts-node (for the one-off seed).
+# migrate deploy) and ts-node (for the one-off seed). tsconfig.base.json is
+# needed at RUNTIME too, not just at build: `nest build`'s compiled dist/main.js
+# doesn't need it, but the seed script runs via `ts-node --transpile-only
+# prisma/seed.ts`, and apps/api/tsconfig.json `extends "../../tsconfig.base.json"`
+# — without this file, ts-node fails with "TS5083: Cannot read file
+# '/app/tsconfig.base.json'" the moment anything (a manual run, or
+# `prisma migrate reset`'s auto-seed) tries to seed.
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json /app/package-lock.json /app/turbo.json ./
+COPY --from=build /app/package.json /app/package-lock.json /app/turbo.json /app/tsconfig.base.json ./
 COPY --from=build /app/packages/contracts ./packages/contracts
 COPY --from=build /app/apps/api ./apps/api
 EXPOSE 4000
