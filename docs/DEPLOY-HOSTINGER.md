@@ -1,36 +1,55 @@
-# Deploying Stockora on a Hostinger VPS (Docker + Traefik)
+# Deploying Stockora on the Hostinger VPS (srv1423476)
 
 This deploys the whole stack — **Postgres + NestJS API + Next.js web** — as one
-Docker Compose project, routed by your **existing Traefik** on a single subdomain:
+Docker Compose project, fronted by **the VPS's own Apache** (confirmed to be the
+real internet-facing edge on this box — see "Why Apache, not Traefik" below) on
+a single subdomain:
 
 | URL | Serves |
 | --- | --- |
 | `https://stockora.abbadev.com/` | Web (Next.js) |
 | `https://stockora.abbadev.com/api` | API (NestJS, global prefix `/api`) |
 
-The browser talks to the API on the **same origin** (`/api`), so there are no CORS
-or second-certificate headaches, and it uses the one DNS record you already made.
+The browser talks to the API on the **same origin** (`/api`), so there's no
+CORS or second-certificate headache.
 
 Files involved (all in the repo):
 - `apps/api/Dockerfile`, `apps/web/Dockerfile` — build the two images (context = repo root).
-- `deploy/docker-compose.prod.yml` — the stack + Traefik labels.
+- `deploy/docker-compose.prod.yml` — the stack; publishes `web`/`api` to loopback ports for Apache to proxy to.
 - `deploy/.env.prod.example` — copy to `deploy/.env.prod` and fill in.
+
+---
+
+## Why Apache, not Traefik
+
+This VPS also runs a `traefik` container (visible in `docker ps`), which looks
+at first glance like the thing to route through. **It isn't, for real traffic.**
+Confirmed by inspection on 2026-09-05:
+
+- `docker port traefik` → empty. Traefik has **no ports published to the host**.
+- `ss -tlnp | grep -E ':80 |:443 '` → **apache2** owns both ports.
+- `apache2ctl -S` lists a `-le-ssl.conf`/`.conf` vhost pair per app (itrack,
+  ipos, crmsales, ihris, n8n, openclaw, ...), each reverse-proxying
+  (`ProxyPass`/`ProxyPassReverse`) to a `127.0.0.1:<port>` where that app's
+  container publishes its web port, with TLS issued by **certbot's Apache
+  plugin** (`certbot --apache`).
+
+So a container's Traefik labels are inert here — nothing ever reaches Traefik
+from outside. Stockora follows the same Apache + certbot pattern as every
+other app on this box.
 
 ---
 
 ## 0. Prerequisites
 
-- DNS: `stockora.abbadev.com` → your VPS IP (`76.13.215.21`). ✅ already done.
-- SSH access to the VPS; `docker` and `docker compose` available. ✅
-- `git` on the VPS.
+- DNS: `stockora.abbadev.com` → `76.13.215.21` (this VPS). ✅ already confirmed.
+- SSH access; `docker`, `docker compose`, `apache2`, `certbot` present. ✅
 
 ---
 
 ## 1. Get the code onto the VPS
 
-The repo is **private**, so authenticate with a GitHub Personal Access Token
-(PAT) when cloning, or add a deploy key. Pick a home for it (your other apps live
-under `/var/www` and `/opt`):
+The repo is **public**, so no credentials are needed:
 
 ```bash
 cd /opt
@@ -38,110 +57,130 @@ git clone https://github.com/iamrgalisanao/stockora.git
 cd stockora
 ```
 
-When prompted, username = `iamrgalisanao`, password = a PAT with `repo` scope
-(GitHub → Settings → Developer settings → Personal access tokens).
+To update later: `git pull` from `/opt/stockora`.
 
 ---
 
-## 2. Detect your Traefik settings (network + cert resolver)
-
-The compose routes via Traefik labels, so it must join the **same docker network**
-your Traefik uses and reference the **same Let's Encrypt resolver name**. The
-fastest way is to copy both from a neighbouring app that already serves HTTPS
-(e.g. `itrack`, `ihris`, `crmsales`).
+## 2. Configure environment
 
 ```bash
-# 1) Find the running containers and the proxy
-docker ps --format '{{.Names}}\t{{.Image}}'
-
-# 2) Copy the network + entrypoints + certresolver from an app that already has TLS.
-#    Replace <app> with a real container name from the list above (e.g. itrack-app-1).
-docker inspect <app> -f '{{json .Config.Labels}}' | tr ',' '\n' \
-  | grep -iE 'traefik.docker.network|entrypoints|certresolver'
-```
-
-You are looking for three values:
-- `traefik.docker.network=...`  → put in `PROXY_NETWORK`
-- `...entrypoints=...` (usually `websecure`) → this compose already uses `websecure`; change it in `deploy/docker-compose.prod.yml` if yours differs.
-- `...tls.certresolver=...` → put in `CERT_RESOLVER`
-
-Confirm Traefik actually watches docker labels (it must, for this to work):
-
-```bash
-TRAEFIK=$(docker ps --format '{{.Names}}' | grep -i traefik | head -1)
-docker inspect "$TRAEFIK" -f '{{json .Args}}' | tr ',' '\n' | grep -iE 'providers.docker|entrypoints|certificatesresolvers'
-```
-
-- If you see `--providers.docker=true` → labels work; continue with Step 3 (recommended path).
-- If Traefik uses only a **file provider** (no docker provider), your panel manages
-  routing itself → jump to **Appendix A** (deploy via the panel UI).
-
-> Tip: if your neighbours' HTTPS is issued differently (e.g. the panel terminates
-> TLS), Appendix A is the safer route.
-
----
-
-## 3. Configure environment
-
-```bash
+cd /opt/stockora
 cp deploy/.env.prod.example deploy/.env.prod
-# generate a strong JWT secret
 openssl rand -hex 32
 nano deploy/.env.prod
 ```
 
 Fill in:
-- `PROXY_NETWORK` and `CERT_RESOLVER` — from Step 2.
 - `POSTGRES_PASSWORD` — a long random string.
-- `JWT_SECRET` — the `openssl rand -hex 32` output.
+- `JWT_SECRET` — the `openssl rand -hex 32` output. **Must be ≥32 characters** —
+  the API refuses to boot otherwise (`Invalid environment configuration: JWT_SECRET
+  must be at least 32 characters in production`).
+- `WEB_HOST_PORT` / `API_HOST_PORT` — leave the defaults (`18300`/`18400`) unless
+  something else on the VPS already uses them.
 - Leave `APP_URL` / `APP_HOST` as the stockora subdomain.
 
 `deploy/.env.prod` is gitignored — it never gets committed.
 
 ---
 
-## 4. Build and start
+## 3. Build and start the containers
 
 ```bash
 docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d --build
 ```
 
-First build takes a few minutes (installs deps, builds contracts + API + Next).
-The API container runs `prisma migrate deploy` automatically on start, creating
-all tables.
-
 Watch it come up:
 
 ```bash
 docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml ps
-docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml logs -f api
+docker logs -f stockora-api-1
 ```
 
-You want to see `Prisma migrate deploy` finish, then `API listening ... /api`.
-
----
-
-## 5. Verify
+Wait for `API listening on http://localhost:4000/api` and confirm it's **not**
+restarting. Then sanity-check the loopback ports directly (before Apache is
+wired up):
 
 ```bash
-# From the VPS — a JSON 404 from Nest means the API is reachable through Traefik.
-# (A plain-text "404 page not found" instead means the /api route isn't matching.)
-curl -sk https://stockora.abbadev.com/api
-
-# The web should return HTML
-curl -skI https://stockora.abbadev.com/ | head -1
+curl -sI http://127.0.0.1:${WEB_HOST_PORT:-18300}/   | head -1   # expect 200
+curl -s  http://127.0.0.1:${API_HOST_PORT:-18400}/api            # expect a Nest 404 JSON body
 ```
-
-Then open **https://stockora.abbadev.com** in a browser:
-1. Click **Register a new organization**.
-2. Create your org + admin account.
-
-Registration self-provisions all roles and permissions transactionally — **no seed
-step is needed.** (If you *want* the demo dataset instead, see Appendix B.)
 
 ---
 
-## 6. Updating after you push new code
+## 4. Add the Apache vhost
+
+Create the port-80 vhost. **Do not** add an HTTPS-redirect block yourself —
+certbot adds that automatically in Step 5, matching every other app on this box:
+
+```bash
+sudo tee /etc/apache2/sites-available/stockora.abbadev.com.conf > /dev/null <<'EOF'
+<VirtualHost *:80>
+    ServerName stockora.abbadev.com
+
+    ProxyPreserveHost On
+    ProxyPass /api http://127.0.0.1:18400/api
+    ProxyPassReverse /api http://127.0.0.1:18400/api
+    ProxyPass / http://127.0.0.1:18300/
+    ProxyPassReverse / http://127.0.0.1:18300/
+
+    ErrorLog ${APACHE_LOG_DIR}/stockora-error.log
+    CustomLog ${APACHE_LOG_DIR}/stockora-access.log combined
+</VirtualHost>
+EOF
+```
+
+> If you changed `WEB_HOST_PORT`/`API_HOST_PORT` from the defaults in Step 2,
+> edit the two port numbers above to match.
+
+`/api` is listed **before** `/` on purpose — Apache's `ProxyPass` directives
+match in the order they're declared, so the more specific path must come first
+or every request would fall through to the web container.
+
+Enable it:
+
+```bash
+sudo a2ensite stockora.abbadev.com.conf
+sudo apache2ctl configtest   # must print "Syntax OK"
+sudo systemctl reload apache2
+```
+
+Verify plain HTTP now reaches the app (the redirect-to-HTTPS doesn't exist
+yet, so this should show the app, not a redirect):
+
+```bash
+curl -sI -H "Host: stockora.abbadev.com" http://127.0.0.1/ | head -1
+```
+
+---
+
+## 5. Issue the TLS certificate
+
+```bash
+sudo certbot --apache -d stockora.abbadev.com
+```
+
+Certbot will detect the vhost by its `ServerName`, obtain the Let's Encrypt
+cert, write `/etc/apache2/sites-available/stockora.abbadev.com-le-ssl.conf`,
+and offer to redirect HTTP → HTTPS — **accept that**, to match every other app
+on this box. It reloads Apache itself.
+
+---
+
+## 6. Verify
+
+```bash
+curl -skI https://stockora.abbadev.com/ | head -1
+curl -sk  https://stockora.abbadev.com/api
+```
+
+Then open **https://stockora.abbadev.com** in a browser and click **Register a
+new organization** to create your org + admin account. Registration
+self-provisions all roles and permissions transactionally — **no seed step is
+needed.** (For the demo dataset instead, see Appendix A.)
+
+---
+
+## 7. Updating after you push new code
 
 ```bash
 cd /opt/stockora
@@ -149,28 +188,13 @@ git pull
 docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d --build
 ```
 
-New migrations apply automatically on API restart. Your Postgres data persists in
-the `stockora_pgdata` volume across rebuilds.
+New Prisma migrations apply automatically on API restart. Postgres data
+persists in the `stockora_pgdata` named volume across rebuilds. The Apache
+vhost and certificate need no changes for ordinary code updates.
 
 ---
 
-## Appendix A — Panel-managed routing (Dokploy/Coolify-style)
-
-If Traefik doesn't watch docker labels, deploy the stack and let the panel route it:
-
-1. In the panel, create a **Compose** service pointing at this repo (or paste
-   `deploy/docker-compose.prod.yml`), with env from `deploy/.env.prod`.
-2. Remove/ignore the `traefik.*` labels (the panel adds its own).
-3. In the panel's **Domains** UI add two mappings on `stockora.abbadev.com`:
-   - Path `/api` → service **api**, port **4000**
-   - Path `/`    → service **web**, port **3000**
-   Enable "HTTPS / Let's Encrypt" on both.
-
-The panel then issues the certificate and wires Traefik for you.
-
----
-
-## Appendix B — Optional demo data
+## Appendix A — Optional demo data
 
 To load the demo organisation (`admin@demo.test` / `password123`) and a sample
 catalog instead of registering your own:
@@ -183,13 +207,28 @@ docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exe
 
 ## Troubleshooting
 
-- **`network <name> not found`** → `PROXY_NETWORK` is wrong; re-check Step 2. The
-  network must already exist (Traefik created it) and be `external: true`.
-- **Traefik "404 page not found" at the domain** → the router didn't match. Confirm
-  the api/web containers are on `PROXY_NETWORK` (`docker inspect <container> -f '{{json .NetworkSettings.Networks}}'`) and that `entrypoints`/`certresolver` names match your Traefik.
-- **TLS not issued** → wrong `CERT_RESOLVER` name, or port 80 isn't reachable for
-  the ACME HTTP challenge. Copy the resolver name from a working neighbour app.
-- **Web build runs out of memory** on a small VPS → add swap, or build the images
-  on a bigger machine and push to a registry, then `image:` them here.
-- **API can't reach the DB** → check `docker compose ... logs postgres`; the
+- **API container keeps restarting, logs show `JWT_SECRET: must be at least 32
+  characters`** → `deploy/.env.prod` still has the placeholder value. Generate
+  a real one (`openssl rand -hex 32`) and `docker compose ... up -d api` to
+  recreate just that container (no rebuild needed — env isn't baked into the image).
+- **Visiting the domain shows the AbbaDev marketing site instead of Stockora**
+  → the Apache vhost isn't enabled/matched yet. Re-check Step 4:
+  `apache2ctl -S` should list `stockora.abbadev.com` under both `*:80` and
+  `*:443`; if it's missing, `a2ensite` didn't run or `apache2ctl configtest`
+  failed silently — rerun it and read its output.
+- **`apache2ctl configtest` fails** → usually a stray character in the heredoc;
+  `cat /etc/apache2/sites-available/stockora.abbadev.com.conf` and compare
+  against Step 4 exactly.
+- **`curl http://127.0.0.1:18300/` (or `:18400`) refused** → the container
+  isn't up, or `WEB_HOST_PORT`/`API_HOST_PORT` in `deploy/.env.prod` don't match
+  what the Apache vhost points at. `docker ps --format '{{.Names}}\t{{.Ports}}'
+  | grep stockora` to check the real bound ports.
+- **`certbot --apache` fails the HTTP-01 challenge** → port 80 must be reachable
+  from the internet for `stockora.abbadev.com` and the Step 4 vhost must already
+  be live (`curl -H "Host: stockora.abbadev.com" http://127.0.0.1/` working)
+  before you run certbot.
+- **Web build runs out of memory** on a constrained VPS → add swap, or build
+  the images elsewhere and push to a registry, then reference `image:` here
+  instead of `build:`.
+- **API can't reach the DB** → `docker compose ... logs postgres`; the
   `DATABASE_URL` host must be `postgres` (the service name), which it is by default.
