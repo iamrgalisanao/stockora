@@ -1,21 +1,23 @@
-# Stockora — production stack (single subdomain, /api path routing).
+# Stockora — production stack, fronted by the VPS's OWN APACHE (not Traefik).
 #
-#   Web : https://${APP_HOST}/         -> web  (Next.js, :3000)
-#   API : https://${APP_HOST}/api      -> api  (NestJS, :4000, serves under /api)
-#   DB  : postgres (internal only)
+# Confirmed on srv1423476 (2026-09-05): Apache — not the `traefik` container —
+# owns host ports 80/443 (`ss -tlnp` showed apache2, and `docker port traefik`
+# is empty). Every other app on this box (itrack, ipos, crmsales, ...) is
+# published to a loopback port and reverse-proxied by an Apache vhost using
+# ProxyPass/ProxyPassReverse, with TLS via certbot's Apache plugin. This stack
+# follows the exact same pattern — see docs/DEPLOY-HOSTINGER.md for the vhost
+# + certbot steps.
 #
-# Routing/TLS is done by your EXISTING Traefik via container labels. Fill the
-# PROXY_NETWORK and CERT_RESOLVER values in deploy/.env.prod (see the guide:
-# docs/DEPLOY-HOSTINGER.md). Run from the repo root:
+#   Apache vhost  https://${APP_HOST}/     -> 127.0.0.1:${WEB_HOST_PORT} -> web  (Next.js, :3000)
+#   Apache vhost  https://${APP_HOST}/api  -> 127.0.0.1:${API_HOST_PORT} -> api  (NestJS, :4000)
+#   DB  : postgres (internal only, never published to the host)
 #
+# Run from the repo root:
 #   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d --build
 # ---------------------------------------------------------------------------
 name: stockora
 
 networks:
-  proxy:
-    external: true
-    name: ${PROXY_NETWORK}       # your Traefik's docker network (detect it — see guide)
   internal:
     driver: bridge
 
@@ -48,7 +50,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [internal, proxy]
+    networks: [internal]
+    ports:
+      # Loopback-only — Apache, on this same host, is the sole consumer.
+      - "127.0.0.1:${API_HOST_PORT:-18400}:4000"
     environment:
       NODE_ENV: production
       API_PORT: "4000"
@@ -56,16 +61,6 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
       CORS_ORIGIN: ${APP_URL}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=${PROXY_NETWORK}"
-      # /api -> API. Higher priority than the web catch-all so it wins.
-      - "traefik.http.routers.stockora-api.rule=Host(`${APP_HOST}`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.stockora-api.entrypoints=websecure"
-      - "traefik.http.routers.stockora-api.tls=true"
-      - "traefik.http.routers.stockora-api.tls.certresolver=${CERT_RESOLVER}"
-      - "traefik.http.routers.stockora-api.priority=100"
-      - "traefik.http.services.stockora-api.loadbalancer.server.port=4000"
 
   web:
     build:
@@ -76,13 +71,5 @@ services:
         NEXT_PUBLIC_API_URL: ${APP_URL}
     image: stockora-web:latest
     restart: unless-stopped
-    networks: [proxy]
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=${PROXY_NETWORK}"
-      - "traefik.http.routers.stockora-web.rule=Host(`${APP_HOST}`)"
-      - "traefik.http.routers.stockora-web.entrypoints=websecure"
-      - "traefik.http.routers.stockora-web.tls=true"
-      - "traefik.http.routers.stockora-web.tls.certresolver=${CERT_RESOLVER}"
-      - "traefik.http.routers.stockora-web.priority=1"
-      - "traefik.http.services.stockora-web.loadbalancer.server.port=3000"
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-18300}:3000"
