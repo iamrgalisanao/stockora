@@ -17,6 +17,10 @@ Files involved (all in the repo):
 - `apps/api/Dockerfile`, `apps/web/Dockerfile` — build the two images (context = repo root).
 - `deploy/docker-compose.prod.yml` — the stack; publishes `web`/`api` to loopback ports for Apache to proxy to.
 - `deploy/.env.prod.example` — copy to `deploy/.env.prod` and fill in.
+- `deploy/demo-reset.sh` — nightly wipe-and-reseed for the public demo (see "Demo mode" below).
+
+This VPS's `stockora.abbadev.com` instance runs with **demo mode on** — see
+"Demo mode" below for what that changes and why.
 
 ---
 
@@ -78,6 +82,8 @@ Fill in:
 - `WEB_HOST_PORT` / `API_HOST_PORT` — leave the defaults (`18300`/`18400`) unless
   something else on the VPS already uses them.
 - Leave `APP_URL` / `APP_HOST` as the stockora subdomain.
+- `DEMO_MODE` — set to `true` for the public demo (see "Demo mode" below), `false`
+  for a real customer instance.
 
 `deploy/.env.prod` is gitignored — it never gets committed.
 
@@ -173,10 +179,15 @@ curl -skI https://stockora.abbadev.com/ | head -1
 curl -sk  https://stockora.abbadev.com/api
 ```
 
-Then open **https://stockora.abbadev.com** in a browser and click **Register a
-new organization** to create your org + admin account. Registration
-self-provisions all roles and permissions transactionally — **no seed step is
-needed.** (For the demo dataset instead, see Appendix A.)
+Then open **https://stockora.abbadev.com** in a browser.
+
+- **`DEMO_MODE=false`** (a real customer instance): click **Register a new
+  organization** to create your org + admin account. Registration
+  self-provisions all roles and permissions transactionally — no seed step needed.
+- **`DEMO_MODE=true`** (this VPS's public demo): the login page already lists
+  the seeded per-role logins (see "Demo mode" below) — pick one and sign in.
+  Registration is still technically reachable but pointless here: anything it
+  creates is wiped by the nightly reset along with everything else.
 
 ---
 
@@ -191,6 +202,51 @@ docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up 
 New Prisma migrations apply automatically on API restart. Postgres data
 persists in the `stockora_pgdata` named volume across rebuilds. The Apache
 vhost and certificate need no changes for ordinary code updates.
+
+**If you changed `DEMO_MODE`** in `deploy/.env.prod`, you must pass `--build`
+(as above) — it's baked into the `web` image at build time, so a plain
+`up -d` without a rebuild won't pick up the change.
+
+---
+
+## Demo mode
+
+`DEMO_MODE=true` turns this exact same codebase into a public, self-serve demo.
+It changes two things, both gated on the single `DEMO_MODE` env var (read by
+the API directly, and passed to the web build as `NEXT_PUBLIC_DEMO_MODE`):
+
+1. **Login page** shows a "Demo accounts" panel listing all 9 seeded per-role
+   logins (`admin@demo.test`, `inventory_manager@demo.test`, ...,
+   `viewer@demo.test`, all password `password123` — see
+   `apps/api/prisma/seed.ts` `ensureDemoRoleUsers()`), each a one-click fill.
+2. **API blocks account/security mutations** (`apps/api/src/common/demo-mode.middleware.ts`)
+   so one visitor can't disrupt another sharing the same login: creating or
+   editing users, editing organization settings, and configuring outbound
+   webhooks all return `403 {"error":"Demo Mode", ...}`. Everything else — the
+   actual inventory workflows the demo exists to show off — works normally.
+
+### Nightly reset
+
+Since many visitors share the same seeded accounts over a day, `deploy/demo-reset.sh`
+drops and recreates the database (migrations + seed, via `prisma migrate reset
+--force`) so it wakes up every morning in its original state. It refuses to run
+unless `deploy/.env.prod` has `DEMO_MODE=true` — a real customer's data can never
+be wiped by this script, even by mistake.
+
+Wire it into root's crontab, nightly at 02:00 server time:
+
+```bash
+sudo crontab -e
+# add this line:
+0 2 * * * /opt/stockora/deploy/demo-reset.sh >> /var/log/stockora-demo-reset.log 2>&1
+```
+
+Test it manually first (it prints what it's doing, and aborts loudly if the
+DEMO_MODE guard isn't satisfied):
+
+```bash
+sudo /opt/stockora/deploy/demo-reset.sh
+```
 
 ---
 
@@ -227,6 +283,15 @@ docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exe
   from the internet for `stockora.abbadev.com` and the Step 4 vhost must already
   be live (`curl -H "Host: stockora.abbadev.com" http://127.0.0.1/` working)
   before you run certbot.
+- **Saving webhooks / editing a user returns `403 {"error":"Demo Mode",...}`**
+  → expected behaviour when `DEMO_MODE=true` — see "Demo mode" above. Not a bug.
+- **`deploy/demo-reset.sh` aborts with "DEMO_MODE is not 'true'"** → intentional
+  safety guard; it only ever runs against a deployment explicitly marked as the
+  public demo. If this VPS's instance really is the demo, check `deploy/.env.prod`
+  has the exact line `DEMO_MODE=true` (no quotes, no trailing text).
+- **Login page doesn't show the demo-accounts panel even though `DEMO_MODE=true`**
+  → it's a build-time flag (`NEXT_PUBLIC_DEMO_MODE`), not a runtime one. Rebuild
+  the web image (`up -d --build`), not just restart it.
 - **Web build runs out of memory** on a constrained VPS → add swap, or build
   the images elsewhere and push to a registry, then reference `image:` here
   instead of `build:`.

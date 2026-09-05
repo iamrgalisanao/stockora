@@ -14,6 +14,15 @@ const envSchema = z
     CORS_ORIGIN: z.string().default('http://localhost:3000'),
     // Multiplier for the in-memory rate limiter (1 = default limits; raise for load tests).
     RATE_LIMIT_FACTOR: z.coerce.number().positive().default(1),
+    // Public-demo guard (see common/demo-mode.middleware.ts) — blocks account/
+    // security-setting mutations so visitors sharing seeded logins can't disrupt
+    // each other. Off by default; only the public demo deployment sets this.
+    // NOTE: z.coerce.boolean() is NOT used here — it coerces via Boolean(str), so
+    // the literal string "false" would coerce to true. Parse the string ourselves.
+    DEMO_MODE: z
+      .string()
+      .optional()
+      .transform((v) => v?.toLowerCase() === 'true'),
   })
   .superRefine((env, ctx) => {
     // Production must not run on a weak or default secret.

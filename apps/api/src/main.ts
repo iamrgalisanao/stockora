@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
+import { demoModeMiddleware } from './common/demo-mode.middleware';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: false, bodyParser: false });
@@ -14,6 +15,7 @@ async function bootstrap(): Promise<void> {
   app.use(urlencoded({ limit: '1mb', extended: true }));
 
   app.setGlobalPrefix('api');
+  app.use(demoModeMiddleware(config.get<boolean>('DEMO_MODE', false)));
   // CORS allowlist (comma-separated). A request from an un-listed origin gets no CORS grant.
   const origins = config
     .get<string>('CORS_ORIGIN', 'http://localhost:3000')
