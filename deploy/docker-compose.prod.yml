@@ -61,6 +61,9 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
       CORS_ORIGIN: ${APP_URL}
+      # Public-demo guard (apps/api/src/common/demo-mode.middleware.ts) — blocks
+      # account/security-setting mutations. Off unless DEMO_MODE=true is set.
+      DEMO_MODE: ${DEMO_MODE:-false}
 
   web:
     build:
@@ -69,6 +72,9 @@ services:
       args:
         # Baked into the client bundle at build time — the public origin only.
         NEXT_PUBLIC_API_URL: ${APP_URL}
+        # Same flag as the API's DEMO_MODE — shows the demo-accounts panel on
+        # the login page. Rebuild (not just recreate) if you change this.
+        NEXT_PUBLIC_DEMO_MODE: ${DEMO_MODE:-false}
     image: stockora-web:latest
     restart: unless-stopped
     ports:
